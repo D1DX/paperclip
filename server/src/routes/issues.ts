@@ -989,6 +989,20 @@ export function issueRoutes(
     return null;
   }
 
+  // D1DX fork (D-431): allow API agent actors to stamp originKind/originId on issues,
+  // so external systems (n8n, scripts) can record the originating record id (e.g. an
+  // Airtable recXXX) and look up issues later via the existing GET ?originId= filter.
+  // User tokens (board) cannot stamp these fields — keeps human-created issues clean
+  // of synthetic origin metadata.
+  function assertAgentOriginFieldMutation(req: Request, body: unknown) {
+    if (!body || typeof body !== "object") return;
+    const b = body as Record<string, unknown>;
+    if (b.originKind === undefined && b.originId === undefined) return;
+    if (req.actor.type !== "agent") {
+      throw forbidden("originKind and originId can only be set by agent actors");
+    }
+  }
+
   async function hasActiveCheckoutManagementOverride(
     actorAgentId: string,
     companyId: string,
@@ -2292,6 +2306,7 @@ export function issueRoutes(
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     assertNoAgentHostWorkspaceCommandMutation(req, collectIssueWorkspaceCommandPaths(req.body));
+    assertAgentOriginFieldMutation(req, req.body);
     if (req.body.assigneeAgentId || req.body.assigneeUserId) {
       await assertCanAssignTasks(req, companyId);
     }
@@ -2532,6 +2547,7 @@ export function issueRoutes(
     }
     assertCompanyAccess(req, existing.companyId);
     assertNoAgentHostWorkspaceCommandMutation(req, collectIssueWorkspaceCommandPaths(req.body));
+    assertAgentOriginFieldMutation(req, req.body);
     if (!(await assertAgentIssueMutationAllowed(req, res, existing))) return;
 
     const actor = getActorInfo(req);

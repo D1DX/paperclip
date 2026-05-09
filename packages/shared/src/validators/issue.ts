@@ -236,6 +236,11 @@ const createIssueBaseSchema = z.object({
   executionWorkspacePreference: z.enum(ISSUE_EXECUTION_WORKSPACE_PREFERENCES).optional().nullable(),
   executionWorkspaceSettings: issueExecutionWorkspaceSettingsSchema.optional().nullable(),
   labelIds: z.array(z.string().uuid()).optional(),
+  // D1DX fork (D-431): expose external-origin tracking on POST + PATCH for agent-stamped issues.
+  // The DB column is text(notNull, default 'manual') with no enum constraint; gate is in the route handler
+  // (agent-only) — see server/src/routes/issues.ts assertAgentOriginFieldMutation.
+  originKind: z.string().min(1).max(120).optional().nullable(),
+  originId: z.string().min(1).max(255).optional().nullable(),
 });
 
 export const createIssueInputSchema = createIssueBaseSchema.extend({
