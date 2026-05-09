@@ -3406,6 +3406,14 @@ export function issueRoutes(
     res.json({ ...issueResponse, comment });
   });
 
+  // D1DX fork (D-456): DELETE /issues/:id is a SOFT-DELETE.
+  // Sets status="cancelled" + hiddenAt=now() in one update. Comments, sub-issues,
+  // runs, approvals, and attachments are all preserved — soft delete leaves history.
+  // Upstream's hard-delete path (svc.remove) only cleared issues + assets + documents
+  // and silently failed on FK fan-out across the ~62 child tables (most NO ACTION),
+  // making the endpoint effectively unusable for any non-leaf issue. Hard-delete
+  // remains available via direct Postgres for operators (see docs).
+  // Activity-log action stays "issue.deleted" so audit consumers don't break.
   router.delete("/issues/:id", async (req, res) => {
     const id = req.params.id as string;
     const existing = await svc.getById(id);
@@ -3415,23 +3423,19 @@ export function issueRoutes(
     }
     assertCompanyAccess(req, existing.companyId);
     if (!(await assertAgentIssueMutationAllowed(req, res, existing))) return;
-    const attachments = await svc.listAttachments(id);
 
-    const issue = await svc.remove(id);
+    const actor = getActorInfo(req);
+    const issue = await svc.update(id, {
+      status: "cancelled",
+      hiddenAt: new Date(),
+      actorAgentId: actor.agentId ?? null,
+      actorUserId: actor.actorType === "user" ? actor.actorId : null,
+    });
     if (!issue) {
       res.status(404).json({ error: "Issue not found" });
       return;
     }
 
-    for (const attachment of attachments) {
-      try {
-        await storage.deleteObject(attachment.companyId, attachment.objectKey);
-      } catch (err) {
-        logger.warn({ err, issueId: id, attachmentId: attachment.id }, "failed to delete attachment object during issue delete");
-      }
-    }
-
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId: issue.companyId,
       actorType: actor.actorType,
@@ -3441,6 +3445,7 @@ export function issueRoutes(
       action: "issue.deleted",
       entityType: "issue",
       entityId: issue.id,
+      details: { softDelete: true, identifier: issue.identifier },
     });
 
     res.json(issue);
