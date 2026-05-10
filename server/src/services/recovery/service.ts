@@ -235,6 +235,22 @@ function isAgentInvokable(agent: typeof agents.$inferSelect | null | undefined) 
   return Boolean(agent && !["paused", "terminated", "pending_approval"].includes(agent.status));
 }
 
+// Adapter types whose runs are operator-paced — they intentionally end without
+// a synchronous execution path and a human picks the issue up later via /task
+// or inbox-lite. Spawning a stranded_issue_recovery sub-issue for these breaks
+// the queue model and creates noise. (D-498 / D1DX fork carve-out — covers
+// stranded_assigned_issue path; sibling path successful_run_missing_state is
+// gated in successful-run-handoff.ts.)
+const HUMAN_PACED_ADAPTER_TYPES = new Set<string>([
+  "http",
+  "claude_local",
+  "human",
+]);
+
+function isHumanPacedAdapter(agent: typeof agents.$inferSelect | null | undefined) {
+  return Boolean(agent && HUMAN_PACED_ADAPTER_TYPES.has(agent.adapterType));
+}
+
 function isStrandedIssueRecoveryIssue(issue: Pick<typeof issues.$inferSelect, "originKind">) {
   return isStrandedIssueRecoveryOriginKind(issue.originKind);
 }
@@ -1754,6 +1770,15 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
 
       const agent = await getAgent(agentId);
       if (!agent || agent.companyId !== issue.companyId || !isAgentInvokable(agent)) {
+        result.skipped += 1;
+        continue;
+      }
+
+      // D-498: human-paced adapters (http/claude_local/human) own their own
+      // pacing — operator picks up via /task or inbox-lite. Recovery spawns
+      // create noise and infinite loops because the assignee isn't expected
+      // to respond synchronously to a corrective wake.
+      if (isHumanPacedAdapter(agent)) {
         result.skipped += 1;
         continue;
       }
