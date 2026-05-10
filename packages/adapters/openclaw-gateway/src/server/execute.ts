@@ -87,12 +87,6 @@ type GatewayClientRequestOptions = {
 };
 
 const PROTOCOL_VERSION = 3;
-// D1DX patch (D-?? 2026-05-09): openclaw upstream bumped PROTOCOL_VERSION
-// from 3→4 in commit 330ba1fa (2026-05-07). Until paperclipai/paperclip ships
-// a v4-aware adapter, we negotiate a range [3..4] so both v3 and v4 openclaw
-// runtimes accept the handshake. Bump PROTOCOL_VERSION to 4 once upstream lands
-// the v4 adapter and revert this patch.
-const MAX_PROTOCOL_VERSION = 4;
 const DEFAULT_SCOPES = ["operator.admin"];
 const DEFAULT_CLIENT_ID = "gateway-client";
 const DEFAULT_CLIENT_MODE = "backend";
@@ -878,7 +872,7 @@ async function autoApproveDevicePairing(params: {
     await client.connect(
       () => ({
         minProtocol: PROTOCOL_VERSION,
-        maxProtocol: MAX_PROTOCOL_VERSION,
+        maxProtocol: PROTOCOL_VERSION,
         client: {
           id: params.clientId,
           version: params.clientVersion,
@@ -1270,7 +1264,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         const signedAtMs = Date.now();
         const connectParams: Record<string, unknown> = {
           minProtocol: PROTOCOL_VERSION,
-          maxProtocol: MAX_PROTOCOL_VERSION,
+          maxProtocol: PROTOCOL_VERSION,
           client: {
             id: clientId,
             version: clientVersion,
