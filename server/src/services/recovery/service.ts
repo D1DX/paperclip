@@ -4,6 +4,7 @@ import {
   DEFAULT_ISSUE_GRAPH_LIVENESS_AUTO_RECOVERY_LOOKBACK_HOURS,
   MAX_ISSUE_GRAPH_LIVENESS_AUTO_RECOVERY_LOOKBACK_HOURS,
   MIN_ISSUE_GRAPH_LIVENESS_AUTO_RECOVERY_LOOKBACK_HOURS,
+  isHumanPacedAdapter,
   type IssueGraphLivenessAutoRecoveryPreview,
   type IssueGraphLivenessAutoRecoveryPreviewItem,
 } from "@paperclipai/shared";
@@ -233,22 +234,6 @@ function formatIssueLinksForComment(relations: Array<{ identifier?: string | nul
 
 function isAgentInvokable(agent: typeof agents.$inferSelect | null | undefined) {
   return Boolean(agent && !["paused", "terminated", "pending_approval"].includes(agent.status));
-}
-
-// Adapter types whose runs are operator-paced — they intentionally end without
-// a synchronous execution path and a human picks the issue up later via /task
-// or inbox-lite. Spawning a stranded_issue_recovery sub-issue for these breaks
-// the queue model and creates noise. (D-498 / D1DX fork carve-out — covers
-// stranded_assigned_issue path; sibling path successful_run_missing_state is
-// gated in successful-run-handoff.ts.)
-const HUMAN_PACED_ADAPTER_TYPES = new Set<string>([
-  "http",
-  "claude_local",
-  "human",
-]);
-
-function isHumanPacedAdapter(agent: typeof agents.$inferSelect | null | undefined) {
-  return Boolean(agent && HUMAN_PACED_ADAPTER_TYPES.has(agent.adapterType));
 }
 
 function isStrandedIssueRecoveryIssue(issue: Pick<typeof issues.$inferSelect, "originKind">) {
@@ -1778,7 +1763,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
       // pacing — operator picks up via /task or inbox-lite. Recovery spawns
       // create noise and infinite loops because the assignee isn't expected
       // to respond synchronously to a corrective wake.
-      if (isHumanPacedAdapter(agent)) {
+      if (isHumanPacedAdapter(agent?.adapterType)) {
         result.skipped += 1;
         continue;
       }

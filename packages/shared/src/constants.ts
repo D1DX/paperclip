@@ -41,6 +41,23 @@ export const AGENT_ADAPTER_TYPES = [
 ] as const;
 export type AgentAdapterType = (typeof AGENT_ADAPTER_TYPES)[number] | (string & {});
 
+// D1DX fork — adapter types whose runs are operator-paced. These agents
+// authenticate via API key (no JWT runId claim) and write to their own
+// in_progress issues from operator-paced sessions (e.g. /task in Claude Code)
+// rather than from a heartbeat-driven run. Originally the carve-out for the
+// recovery service (D-498, fa8b995c + 5c803f44) lived as a scoped local;
+// after D-510 added a third call site (assertAgentIssueMutationAllowed), this
+// was extracted to a single source of truth.
+export const HUMAN_PACED_ADAPTER_TYPES = new Set<string>([
+  "http",
+  "claude_local",
+  "human",
+]);
+
+export function isHumanPacedAdapter(adapterType: string | null | undefined): boolean {
+  return Boolean(adapterType && HUMAN_PACED_ADAPTER_TYPES.has(adapterType));
+}
+
 export const AGENT_ROLES = [
   "ceo",
   "cto",

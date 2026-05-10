@@ -33,6 +33,7 @@ import {
   updateIssueSchema,
   getClosedIsolatedExecutionWorkspaceMessage,
   isClosedIsolatedExecutionWorkspace,
+  isHumanPacedAdapter,
   normalizeIssueIdentifier as normalizeIssueReferenceIdentifier,
   type CompanySearchQuery,
   type CompanySearchResponse,
@@ -104,20 +105,6 @@ const MAX_ISSUE_COMMENT_LIMIT = 500;
 const updateIssueRouteSchema = updateIssueSchema.extend({
   interrupt: z.boolean().optional(),
 });
-
-// D-510 / D1DX fork carve-out — adapter types whose runs are operator-paced.
-// These agents authenticate via API key (no JWT runId claim) and write to
-// their own in_progress issues from operator-paced sessions (e.g. /task in
-// Claude Code) rather than from a heartbeat-driven run. Mirrors the
-// HUMAN_PACED_ADAPTER_TYPES sets in services/recovery/service.ts and
-// services/recovery/successful-run-handoff.ts (D-498). Kept as a scoped local
-// per the fork's surgical-patch convention; promote to a shared util if a
-// fourth call site is ever introduced.
-const HUMAN_PACED_ADAPTER_TYPES = new Set<string>([
-  "http",
-  "claude_local",
-  "human",
-]);
 
 type ParsedExecutionState = NonNullable<ReturnType<typeof parseIssueExecutionState>>;
 type NormalizedExecutionPolicy = NonNullable<ReturnType<typeof normalizeIssueExecutionPolicy>>;
@@ -1102,7 +1089,7 @@ export function issueRoutes(
     // D-498 carve-out family in services/recovery/.
     if (!req.actor.runId?.trim()) {
       const actorAgent = await agentsSvc.getById(actorAgentId);
-      if (actorAgent && HUMAN_PACED_ADAPTER_TYPES.has(actorAgent.adapterType)) {
+      if (isHumanPacedAdapter(actorAgent?.adapterType)) {
         return true;
       }
     }

@@ -1,7 +1,12 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { agentWakeupRequests, agents, heartbeatRuns, issues } from "@paperclipai/db";
-import type { IssueCommentMetadata, IssueCommentPresentation, RunLivenessState } from "@paperclipai/shared";
+import {
+  isHumanPacedAdapter,
+  type IssueCommentMetadata,
+  type IssueCommentPresentation,
+  type RunLivenessState,
+} from "@paperclipai/shared";
 import { withRecoveryModelProfileHint } from "./model-profile-hint.js";
 
 export const FINISH_SUCCESSFUL_RUN_HANDOFF_REASON = "finish_successful_run_handoff";
@@ -49,15 +54,6 @@ type IssueRow = Pick<
 >;
 type AgentRow = Pick<typeof agents.$inferSelect, "id" | "companyId" | "status" | "adapterType">;
 
-// Adapter types whose runs are operator-paced — they intentionally end without a
-// synchronous disposition and a human picks the issue up later via /task or
-// inbox-lite. Spawning a stranded_issue_recovery sub-issue for these breaks the
-// queue model and creates noise. (D-498 / D1DX fork carve-out.)
-const HUMAN_PACED_ADAPTER_TYPES = new Set<string>([
-  "http",
-  "claude_local",
-  "human",
-]);
 type NoticeIssue = Pick<typeof issues.$inferSelect, "id" | "identifier" | "title" | "status">;
 type NoticeRun = Pick<typeof heartbeatRuns.$inferSelect, "id" | "status">;
 type NoticeAgent = Pick<typeof agents.$inferSelect, "id" | "name">;
@@ -361,7 +357,7 @@ export function decideSuccessfulRunHandoff(input: {
   if (agent.status === "paused" || agent.status === "terminated" || agent.status === "pending_approval") {
     return { kind: "skip", reason: `agent status ${agent.status} is not invokable` };
   }
-  if (HUMAN_PACED_ADAPTER_TYPES.has(agent.adapterType)) {
+  if (isHumanPacedAdapter(agent.adapterType)) {
     return { kind: "skip", reason: `adapter type ${agent.adapterType} is human-paced` };
   }
   if (!isProductiveSuccessfulRun(input)) {
