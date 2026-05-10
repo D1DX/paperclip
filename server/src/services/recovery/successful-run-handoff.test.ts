@@ -35,6 +35,7 @@ const agent = {
   id: "agent-1",
   companyId: "company-1",
   status: "idle",
+  adapterType: "process",
 } as any;
 
 function decide(overrides: Partial<Parameters<typeof decideSuccessfulRunHandoff>[0]> = {}) {
@@ -121,6 +122,15 @@ describe("successful run handoff decision", () => {
       kind: "skip",
       reason: "explicit blocker path owns the next action",
     });
+  });
+
+  it("does not queue for human-paced adapter types (D-498 carve-out)", () => {
+    for (const adapterType of ["http", "claude_local", "human"]) {
+      expect(decide({ agent: { ...agent, adapterType } as any })).toEqual({
+        kind: "skip",
+        reason: `adapter type ${adapterType} is human-paced`,
+      });
+    }
   });
 
   it("does not queue when a successful run has no progress signal", () => {
