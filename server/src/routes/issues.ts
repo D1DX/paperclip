@@ -105,6 +105,20 @@ const updateIssueRouteSchema = updateIssueSchema.extend({
   interrupt: z.boolean().optional(),
 });
 
+// D-510 / D1DX fork carve-out — adapter types whose runs are operator-paced.
+// These agents authenticate via API key (no JWT runId claim) and write to
+// their own in_progress issues from operator-paced sessions (e.g. /task in
+// Claude Code) rather than from a heartbeat-driven run. Mirrors the
+// HUMAN_PACED_ADAPTER_TYPES sets in services/recovery/service.ts and
+// services/recovery/successful-run-handoff.ts (D-498). Kept as a scoped local
+// per the fork's surgical-patch convention; promote to a shared util if a
+// fourth call site is ever introduced.
+const HUMAN_PACED_ADAPTER_TYPES = new Set<string>([
+  "http",
+  "claude_local",
+  "human",
+]);
+
 type ParsedExecutionState = NonNullable<ReturnType<typeof parseIssueExecutionState>>;
 type NormalizedExecutionPolicy = NonNullable<ReturnType<typeof normalizeIssueExecutionPolicy>>;
 type CompanySearchService = {
@@ -1078,6 +1092,19 @@ export function issueRoutes(
     }
     if (issue.status !== "in_progress") {
       return true;
+    }
+    // D-510: human-paced adapters (http/claude_local/human) authenticate via
+    // API key without a run id claim. They write to their own in_progress
+    // issues from operator-paced sessions (e.g. /task in Claude Code), not
+    // from a heartbeat-driven run. Exempt the runId requirement only when
+    // the actor genuinely has no runId — claude_local agents WITH a runId
+    // still validate ownership via assertCheckoutOwner below. Mirrors the
+    // D-498 carve-out family in services/recovery/.
+    if (!req.actor.runId?.trim()) {
+      const actorAgent = await agentsSvc.getById(actorAgentId);
+      if (actorAgent && HUMAN_PACED_ADAPTER_TYPES.has(actorAgent.adapterType)) {
+        return true;
+      }
     }
     const runId = requireAgentRunId(req, res);
     if (!runId) return false;

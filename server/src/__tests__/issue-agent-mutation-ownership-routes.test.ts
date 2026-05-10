@@ -470,4 +470,71 @@ describe("agent issue mutation checkout ownership", () => {
       title: "Claimable update",
     });
   });
+
+  // D-510: human-paced adapters (http/claude_local/human) authenticate via API
+  // key without a JWT runId claim. They write to their own in_progress issues
+  // from operator-paced sessions (e.g. /task in Claude Code). Exempt the
+  // runId requirement only when actor.runId is genuinely empty.
+
+  function ownerActorWithoutRunId() {
+    return {
+      type: "agent",
+      agentId: ownerAgentId,
+      companyId,
+      source: "agent_key",
+    };
+  }
+
+  it.each([
+    ["patch", 200, (app: express.Express) => request(app).patch(`/api/issues/${issueId}`).send({ title: "Updated" })],
+    ["comment", 201, (app: express.Express) => request(app).post(`/api/issues/${issueId}/comments`).send({ body: "[did] Worked on it." })],
+    [
+      "document upsert",
+      200,
+      (app: express.Express) =>
+        request(app).put(`/api/issues/${issueId}/documents/plan`).send({ format: "markdown", body: "# plan" }),
+    ],
+  ])("D-510: exempts http-adapter own-assignee %s on in_progress issue when actor has no runId", async (_kind, expectedStatus, sendRequest) => {
+    mockAgentService.getById.mockImplementation(async (id: string) => {
+      if (id === ownerAgentId) return makeAgent(ownerAgentId, { adapterType: "http" });
+      if (id === peerAgentId) return makeAgent(peerAgentId);
+      return null;
+    });
+
+    const res = await sendRequest(await createApp(ownerActorWithoutRunId()));
+
+    expect(res.status, JSON.stringify(res.body)).toBe(expectedStatus);
+    expect(mockIssueService.assertCheckoutOwner).not.toHaveBeenCalled();
+  });
+
+  it("D-510: claude_local agent WITH runId still validates ownership via assertCheckoutOwner", async () => {
+    mockAgentService.getById.mockImplementation(async (id: string) => {
+      if (id === ownerAgentId) return makeAgent(ownerAgentId, { adapterType: "claude_local" });
+      if (id === peerAgentId) return makeAgent(peerAgentId);
+      return null;
+    });
+
+    const res = await request(await createApp(ownerActor()))
+      .patch(`/api/issues/${issueId}`)
+      .send({ title: "Updated by claude_local with runId" });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(mockIssueService.assertCheckoutOwner).toHaveBeenCalledWith(issueId, ownerAgentId, ownerRunId);
+  });
+
+  it("D-510: rejects non-human-paced own-assignee in_progress mutation when actor has no runId (Babi-class regression guard)", async () => {
+    mockAgentService.getById.mockImplementation(async (id: string) => {
+      if (id === ownerAgentId) return makeAgent(ownerAgentId, { adapterType: "openclaw_gateway" });
+      if (id === peerAgentId) return makeAgent(peerAgentId);
+      return null;
+    });
+
+    const res = await request(await createApp(ownerActorWithoutRunId()))
+      .patch(`/api/issues/${issueId}`)
+      .send({ title: "Should 401" });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(401);
+    expect(res.body.error).toBe("Agent run id required");
+    expect(mockIssueService.assertCheckoutOwner).not.toHaveBeenCalled();
+  });
 });
