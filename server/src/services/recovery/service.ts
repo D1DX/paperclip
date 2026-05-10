@@ -4,7 +4,7 @@ import {
   DEFAULT_ISSUE_GRAPH_LIVENESS_AUTO_RECOVERY_LOOKBACK_HOURS,
   MAX_ISSUE_GRAPH_LIVENESS_AUTO_RECOVERY_LOOKBACK_HOURS,
   MIN_ISSUE_GRAPH_LIVENESS_AUTO_RECOVERY_LOOKBACK_HOURS,
-  isHumanPacedAdapter,
+  isRunlessAdapter,
   type IssueGraphLivenessAutoRecoveryPreview,
   type IssueGraphLivenessAutoRecoveryPreviewItem,
 } from "@paperclipai/shared";
@@ -1759,11 +1759,13 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
         continue;
       }
 
-      // D-498: human-paced adapters (http/claude_local/human) own their own
-      // pacing — operator picks up via /task or inbox-lite. Recovery spawns
-      // create noise and infinite loops because the assignee isn't expected
-      // to respond synchronously to a corrective wake.
-      if (isHumanPacedAdapter(agent?.adapterType)) {
+      // D-498 + D-561: runless adapters (http/claude_local/human/process) own
+      // their own pacing — operator-paced agents pick up via /task or
+      // inbox-lite; machine-paced services (process, e.g. _Airtable n8n sync)
+      // run on cron without a run lifecycle. Recovery spawns create noise and
+      // infinite loops because the assignee isn't expected to respond
+      // synchronously to a corrective wake.
+      if (isRunlessAdapter(agent?.adapterType)) {
         result.skipped += 1;
         continue;
       }

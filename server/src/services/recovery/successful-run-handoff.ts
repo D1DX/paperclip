@@ -2,7 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { agentWakeupRequests, agents, heartbeatRuns, issues } from "@paperclipai/db";
 import {
-  isHumanPacedAdapter,
+  isRunlessAdapter,
   type IssueCommentMetadata,
   type IssueCommentPresentation,
   type RunLivenessState,
@@ -357,8 +357,8 @@ export function decideSuccessfulRunHandoff(input: {
   if (agent.status === "paused" || agent.status === "terminated" || agent.status === "pending_approval") {
     return { kind: "skip", reason: `agent status ${agent.status} is not invokable` };
   }
-  if (isHumanPacedAdapter(agent.adapterType)) {
-    return { kind: "skip", reason: `adapter type ${agent.adapterType} is human-paced` };
+  if (isRunlessAdapter(agent.adapterType)) {
+    return { kind: "skip", reason: `adapter type ${agent.adapterType} is runless` };
   }
   if (!isProductiveSuccessfulRun(input)) {
     return { kind: "skip", reason: "successful run did not produce handoff-relevant progress" };

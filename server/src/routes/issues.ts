@@ -33,7 +33,7 @@ import {
   updateIssueSchema,
   getClosedIsolatedExecutionWorkspaceMessage,
   isClosedIsolatedExecutionWorkspace,
-  isHumanPacedAdapter,
+  isRunlessAdapter,
   normalizeIssueIdentifier as normalizeIssueReferenceIdentifier,
   type CompanySearchQuery,
   type CompanySearchResponse,
@@ -1080,16 +1080,17 @@ export function issueRoutes(
     if (issue.status !== "in_progress") {
       return true;
     }
-    // D-510: human-paced adapters (http/claude_local/human) authenticate via
-    // API key without a run id claim. They write to their own in_progress
-    // issues from operator-paced sessions (e.g. /task in Claude Code), not
-    // from a heartbeat-driven run. Exempt the runId requirement only when
-    // the actor genuinely has no runId — claude_local agents WITH a runId
-    // still validate ownership via assertCheckoutOwner below. Mirrors the
-    // D-498 carve-out family in services/recovery/.
+    // D-510 + D-561: runless adapters (http/claude_local/human/process)
+    // authenticate via API key without a run id claim. Operator-paced agents
+    // (http/claude_local/human) write from /task sessions; machine-paced
+    // services (process, e.g. _Airtable n8n sync) write from cron without
+    // a run lifecycle. Exempt the runId requirement only when the actor
+    // genuinely has no runId — claude_local agents WITH a runId still
+    // validate ownership via assertCheckoutOwner below. Mirrors the D-498
+    // carve-out family in services/recovery/.
     if (!req.actor.runId?.trim()) {
       const actorAgent = await agentsSvc.getById(actorAgentId);
-      if (isHumanPacedAdapter(actorAgent?.adapterType)) {
+      if (isRunlessAdapter(actorAgent?.adapterType)) {
         return true;
       }
     }
