@@ -62,6 +62,22 @@ export function isRunlessAdapter(adapterType: string | null | undefined): boolea
   return Boolean(adapterType && RUNLESS_ADAPTER_TYPES.has(adapterType));
 }
 
+// D1DX fork — service adapter types: machine-paced mirror services that
+// sync an external source-of-truth (e.g. Airtable) into Paperclip. Unlike
+// operator-paced runless adapters (http/claude_local/human), services need
+// to write to issues they are NOT the assignee of — that's their job.
+// Used by D-561's non-assignee carve-out in assertAgentIssueMutationAllowed:
+// when actor is a SERVICE adapter, it can mutate any in_progress issue
+// regardless of assignee. Operator-paced types stay subject to assignee-
+// mutex (one operator session shouldn't PATCH another's checked-out work).
+export const SERVICE_ADAPTER_TYPES = new Set<string>([
+  "process",
+]);
+
+export function isServiceAdapter(adapterType: string | null | undefined): boolean {
+  return Boolean(adapterType && SERVICE_ADAPTER_TYPES.has(adapterType));
+}
+
 export const AGENT_ROLES = [
   "ceo",
   "cto",

@@ -34,6 +34,7 @@ import {
   getClosedIsolatedExecutionWorkspaceMessage,
   isClosedIsolatedExecutionWorkspace,
   isRunlessAdapter,
+  isServiceAdapter,
   normalizeIssueIdentifier as normalizeIssueReferenceIdentifier,
   type CompanySearchQuery,
   type CompanySearchResponse,
@@ -1052,6 +1053,18 @@ export function issueRoutes(
     }
     if (issue.assigneeAgentId !== actorAgentId) {
       if (await hasActiveCheckoutManagementOverride(actorAgentId, issue.companyId, issue.assigneeAgentId)) {
+        return true;
+      }
+      // D-561: service adapters (process) are machine-paced mirrors of an
+      // external source of truth (e.g. _Airtable n8n sync). They legitimately
+      // need to write to issues they aren't the assignee of — that's their
+      // job. Operator-paced runless adapters (http/claude_local/human) stay
+      // subject to assignee-mutex (one operator session shouldn't PATCH
+      // another's checked-out work). Service actors are also unaffected by
+      // the runId requirement (D-510 same-assignee branch) since they have
+      // no run lifecycle. This carve-out is the non-assignee analogue.
+      const nonAssigneeActorAgent = await agentsSvc.getById(actorAgentId);
+      if (isServiceAdapter(nonAssigneeActorAgent?.adapterType)) {
         return true;
       }
       if (issue.status === "in_progress") {
