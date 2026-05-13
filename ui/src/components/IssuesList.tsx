@@ -60,7 +60,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
-import { CircleDot, Plus, ArrowUpDown, Layers, Check, ChevronRight, List, ListTree, Columns3, User, Search, CircleSlash2 } from "lucide-react";
+import { CircleDot, Plus, ArrowUpDown, Layers, Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, List, ListTree, Columns3, User, Search, CircleSlash2 } from "lucide-react";
 import { KanbanBoard } from "./KanbanBoard";
 import { buildIssueTree, countDescendants } from "../lib/issue-tree";
 import { buildSubIssueDefaultsForViewer } from "../lib/subIssueDefaults";
@@ -1323,6 +1323,26 @@ export function IssuesList({
               <ListTree className="h-3.5 w-3.5" />
             </Button>
           )}
+
+          {viewState.viewMode === "list" && viewState.nestingEnabled && (() => {
+            const { childMap } = buildIssueTree(filtered);
+            const allParentIds = Array.from(childMap.keys());
+            if (allParentIds.length === 0) return null;
+            const allCollapsed = allParentIds.every((id) => viewState.collapsedParents.includes(id));
+            return (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="hidden h-8 w-8 shrink-0 sm:inline-flex"
+                onClick={() => updateView({ collapsedParents: allCollapsed ? [] : allParentIds })}
+                title={allCollapsed ? "Expand all" : "Collapse all"}
+                aria-label={allCollapsed ? "Expand all parent issues" : "Collapse all parent issues"}
+              >
+                {allCollapsed ? <ChevronsUpDown className="h-3.5 w-3.5" /> : <ChevronsDownUp className="h-3.5 w-3.5" />}
+              </Button>
+            );
+          })()}
 
           <IssueColumnPicker
             availableColumns={availableIssueColumns}
