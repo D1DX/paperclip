@@ -2824,6 +2824,21 @@ export function issueService(db: Db) {
         throw unprocessable("in_progress issues require an assignee");
       }
       return db.transaction(async (tx) => {
+        // D-849: When creating a sub-issue (parentId set) without explicit projectId/goalId,
+        // inherit from the parent — matches the established behavior of svc.createChild
+        // (which resolves these before calling svc.create). This makes the top-level
+        // POST /companies/:cid/issues route consistent with /issues/:id/children for any
+        // caller (notably the MCP paperclipCreateIssue) that passes parentId in the body.
+        if (issueData.parentId && (issueData.projectId == null || issueData.goalId == null)) {
+          const [parentInherit] = await tx
+            .select({ projectId: issues.projectId, goalId: issues.goalId })
+            .from(issues)
+            .where(and(eq(issues.id, issueData.parentId), eq(issues.companyId, companyId)));
+          if (parentInherit) {
+            issueData.projectId = issueData.projectId ?? parentInherit.projectId;
+            issueData.goalId = issueData.goalId ?? parentInherit.goalId;
+          }
+        }
         const defaultCompanyGoal = await getDefaultCompanyGoal(tx, companyId);
         const projectGoalId = await getProjectDefaultGoalId(tx, companyId, issueData.projectId);
         let projectWorkspaceId = issueData.projectWorkspaceId ?? null;

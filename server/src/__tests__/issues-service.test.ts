@@ -1322,6 +1322,65 @@ describeEmbeddedPostgres("issueService.create workspace inheritance", () => {
     });
   });
 
+  it("inherits projectId from parent when child omits projectId (D-849)", async () => {
+    const companyId = randomUUID();
+    const projectId = randomUUID();
+    const parentIssueId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+
+    await db.insert(projects).values({
+      id: projectId,
+      companyId,
+      name: "Parent's project",
+      status: "in_progress",
+    });
+
+    await db.insert(issues).values({
+      id: parentIssueId,
+      companyId,
+      projectId,
+      title: "Parent issue",
+      status: "in_progress",
+      priority: "medium",
+    });
+
+    // Caller omits projectId entirely — should inherit from parent.
+    const childInherited = await svc.create(companyId, {
+      parentId: parentIssueId,
+      title: "Child without explicit project",
+    });
+    expect(childInherited.parentId).toBe(parentIssueId);
+    expect(childInherited.projectId).toBe(projectId);
+
+    // Caller passes explicit projectId — should NOT inherit (respect explicit).
+    const otherProjectId = randomUUID();
+    await db.insert(projects).values({
+      id: otherProjectId,
+      companyId,
+      name: "Other project",
+      status: "in_progress",
+    });
+    const childExplicit = await svc.create(companyId, {
+      parentId: parentIssueId,
+      projectId: otherProjectId,
+      title: "Child with explicit project",
+    });
+    expect(childExplicit.projectId).toBe(otherProjectId);
+
+    // Caller passes no parentId — no inheritance occurs.
+    const orphan = await svc.create(companyId, {
+      title: "Orphan issue",
+    });
+    expect(orphan.parentId).toBeNull();
+    expect(orphan.projectId).toBeNull();
+  });
+
   it("captures the assignee default environment when neither issue nor project specifies one", async () => {
     const companyId = randomUUID();
     const projectId = randomUUID();
