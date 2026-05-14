@@ -1048,6 +1048,7 @@ describe("inbox helpers", () => {
         workspaces: ["workspace-1"],
         liveOnly: true,
         hideRoutineExecutions: false,
+        dueDatePreset: null,
       },
     });
     expect(loadInboxFilterPreferences("company-2")).toEqual({
@@ -1063,6 +1064,7 @@ describe("inbox helpers", () => {
         workspaces: [],
         liveOnly: false,
         hideRoutineExecutions: true,
+        dueDatePreset: null,
       },
     });
   });
@@ -1097,6 +1099,7 @@ describe("inbox helpers", () => {
         workspaces: ["workspace-1"],
         liveOnly: false,
         hideRoutineExecutions: false,
+        dueDatePreset: null,
       },
     });
   });

@@ -1461,6 +1461,19 @@ export function issueRoutes(
     }
     const offset = parsedOffset ?? 0;
 
+    const isoDate = /^\d{4}-\d{2}-\d{2}$/;
+    const dueBeforeRaw = req.query.dueBefore as string | undefined;
+    const dueAfterRaw = req.query.dueAfter as string | undefined;
+    if (dueBeforeRaw !== undefined && !isoDate.test(dueBeforeRaw)) {
+      res.status(400).json({ error: "dueBefore must be an ISO date (YYYY-MM-DD)" });
+      return;
+    }
+    if (dueAfterRaw !== undefined && !isoDate.test(dueAfterRaw)) {
+      res.status(400).json({ error: "dueAfter must be an ISO date (YYYY-MM-DD)" });
+      return;
+    }
+    const overdueParam = req.query.overdue === "true" || req.query.overdue === "1";
+
     const result = await svc.list(companyId, {
       status: req.query.status as string | undefined,
       assigneeAgentId: req.query.assigneeAgentId as string | undefined,
@@ -1478,6 +1491,9 @@ export function issueRoutes(
       originKind: req.query.originKind as string | undefined,
       originKindPrefix: req.query.originKindPrefix as string | undefined,
       originId: req.query.originId as string | undefined,
+      dueBefore: dueBeforeRaw,
+      dueAfter: dueAfterRaw,
+      overdue: overdueParam,
       includeRoutineExecutions:
         req.query.includeRoutineExecutions === "true" || req.query.includeRoutineExecutions === "1",
       excludeRoutineExecutions:

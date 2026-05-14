@@ -26,6 +26,7 @@ import {
   applyIssueFilters,
   countActiveIssueFilters,
   defaultIssueFilterState,
+  issueDueDateFiltersFromPreset,
   issueFilterLabel,
   issuePriorityOrder,
   normalizeIssueFilterState,
@@ -666,10 +667,16 @@ export function IssuesList({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [issues]);
 
+  const dueDateServerFilters = useMemo(
+    () => issueDueDateFiltersFromPreset(viewState.dueDatePreset),
+    [viewState.dueDatePreset],
+  );
+
   const { data: searchedIssues = [] } = useQuery({
     queryKey: [
       ...queryKeys.issues.search(selectedCompanyId!, normalizedIssueSearch, projectId),
       searchFilters ?? {},
+      dueDateServerFilters,
       ISSUE_SEARCH_RESULT_LIMIT,
       enableRoutineVisibilityFilter ? "with-routine-executions" : "without-routine-executions",
     ],
@@ -679,6 +686,7 @@ export function IssuesList({
         projectId,
         limit: ISSUE_SEARCH_RESULT_LIMIT,
         ...searchFilters,
+        ...dueDateServerFilters,
         ...(enableRoutineVisibilityFilter ? { includeRoutineExecutions: true } : {}),
       }),
     enabled: !!selectedCompanyId && normalizedIssueSearch.length > 0 && !searchWithinLoadedIssues,
@@ -693,12 +701,14 @@ export function IssuesList({
         normalizedIssueSearch,
         projectId ?? "__all-projects__",
         searchFilters ?? {},
+        dueDateServerFilters,
         ISSUE_BOARD_COLUMN_RESULT_LIMIT,
         enableRoutineVisibilityFilter ? "with-routine-executions" : "without-routine-executions",
       ],
       queryFn: () =>
         issuesApi.list(selectedCompanyId!, {
           ...searchFilters,
+          ...dueDateServerFilters,
           ...(normalizedIssueSearch.length > 0 ? { q: normalizedIssueSearch } : {}),
           projectId,
           status,

@@ -9,6 +9,7 @@ import { PriorityIcon } from "./PriorityIcon";
 import { StatusIcon } from "./StatusIcon";
 import {
   defaultIssueFilterState,
+  issueDueDatePresets,
   issueFilterArraysEqual,
   issueFilterLabel,
   issuePriorityOrder,
@@ -157,6 +158,29 @@ export function IssueFiltersPopover({
                         : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
                     }`}
                     onClick={() => onChange({ statuses: isActive ? [] : [...preset.statuses] })}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <span className="text-xs text-muted-foreground">Due date</span>
+            <div className="flex flex-wrap gap-1.5">
+              {issueDueDatePresets.map((preset) => {
+                const isActive = state.dueDatePreset === preset.value;
+                return (
+                  <button
+                    key={preset.value}
+                    type="button"
+                    className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                      isActive
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+                    }`}
+                    onClick={() => onChange({ dueDatePreset: isActive ? null : preset.value })}
                   >
                     {preset.label}
                   </button>

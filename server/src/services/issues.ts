@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { and, asc, desc, eq, gt, inArray, isNull, like, lt, ne, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, like, lt, lte, ne, notInArray, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   activityLog,
@@ -135,6 +135,9 @@ export interface IssueFilters {
   originKind?: string;
   originKindPrefix?: string;
   originId?: string;
+  dueBefore?: string;
+  dueAfter?: string;
+  overdue?: boolean;
   includeRoutineExecutions?: boolean;
   excludeRoutineExecutions?: boolean;
   includePluginOperations?: boolean;
@@ -2312,6 +2315,18 @@ export function issueService(db: Db) {
       if (filters?.originKind) conditions.push(eq(issues.originKind, filters.originKind));
       if (filters?.originKindPrefix) conditions.push(like(issues.originKind, `${filters.originKindPrefix}%`));
       if (filters?.originId) conditions.push(eq(issues.originId, filters.originId));
+      if (filters?.overdue) {
+        conditions.push(isNotNull(issues.dueDate));
+        conditions.push(lt(issues.dueDate, sql`CURRENT_DATE`));
+      }
+      if (filters?.dueBefore) {
+        conditions.push(isNotNull(issues.dueDate));
+        conditions.push(lte(issues.dueDate, filters.dueBefore));
+      }
+      if (filters?.dueAfter) {
+        conditions.push(isNotNull(issues.dueDate));
+        conditions.push(gte(issues.dueDate, filters.dueAfter));
+      }
       if (!shouldIncludePluginOperationIssues(filters)) {
         conditions.push(nonPluginOperationIssueCondition());
       }

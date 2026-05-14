@@ -10,6 +10,8 @@ export type IssueFilterWorkspaceContext = {
   defaultProjectWorkspaceIdByProjectId?: ReadonlyMap<string, string>;
 };
 
+export type IssueDueDatePreset = "overdue" | "due_today" | "due_this_week";
+
 export type IssueFilterState = {
   statuses: string[];
   priorities: string[];
@@ -20,6 +22,7 @@ export type IssueFilterState = {
   workspaces: string[];
   liveOnly?: boolean;
   hideRoutineExecutions: boolean;
+  dueDatePreset?: IssueDueDatePreset | null;
 };
 
 export const defaultIssueFilterState: IssueFilterState = {
@@ -32,7 +35,46 @@ export const defaultIssueFilterState: IssueFilterState = {
   workspaces: [],
   liveOnly: false,
   hideRoutineExecutions: false,
+  dueDatePreset: null,
 };
+
+export const issueDueDatePresets: ReadonlyArray<{ value: IssueDueDatePreset; label: string }> = [
+  { value: "overdue", label: "Overdue" },
+  { value: "due_today", label: "Due Today" },
+  { value: "due_this_week", label: "Due This Week" },
+];
+
+/**
+ * Returns YYYY-MM-DD for the given Date in local time.
+ * Local time matters here: "Due Today" should mean today in the user's calendar,
+ * not today in UTC (which clips late evening / early morning).
+ */
+export function formatLocalIsoDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Maps a preset to the server filter shape. `now` is injectable so callers
+ * can pin a stable value across a single render to avoid time-rollover races.
+ */
+export function issueDueDateFiltersFromPreset(
+  preset: IssueDueDatePreset | null | undefined,
+  now: Date = new Date(),
+): { overdue?: boolean; dueBefore?: string; dueAfter?: string } {
+  if (!preset) return {};
+  const today = formatLocalIsoDate(now);
+  if (preset === "overdue") return { overdue: true };
+  if (preset === "due_today") return { dueAfter: today, dueBefore: today };
+  if (preset === "due_this_week") {
+    const weekOut = new Date(now);
+    weekOut.setDate(weekOut.getDate() + 7);
+    return { dueAfter: today, dueBefore: formatLocalIsoDate(weekOut) };
+  }
+  return {};
+}
 
 export const issueStatusOrder = ["in_progress", "todo", "backlog", "in_review", "blocked", "done", "cancelled"];
 export const issuePriorityOrder = ["critical", "high", "medium", "low"];
@@ -60,6 +102,10 @@ function normalizeIssueFilterValueArray(value: unknown): string[] {
   return value.filter((entry): entry is string => typeof entry === "string");
 }
 
+function isIssueDueDatePreset(value: unknown): value is IssueDueDatePreset {
+  return value === "overdue" || value === "due_today" || value === "due_this_week";
+}
+
 export function normalizeIssueFilterState(value: unknown): IssueFilterState {
   if (!value || typeof value !== "object") return { ...defaultIssueFilterState };
   const candidate = value as Partial<Record<keyof IssueFilterState, unknown>>;
@@ -73,6 +119,7 @@ export function normalizeIssueFilterState(value: unknown): IssueFilterState {
     workspaces: normalizeIssueFilterValueArray(candidate.workspaces),
     liveOnly: candidate.liveOnly === true,
     hideRoutineExecutions: candidate.hideRoutineExecutions === true,
+    dueDatePreset: isIssueDueDatePreset(candidate.dueDatePreset) ? candidate.dueDatePreset : null,
   };
 }
 
@@ -166,6 +213,22 @@ export function applyIssueFilters(
       return workspaceId != null && state.workspaces.includes(workspaceId);
     });
   }
+  if (state.dueDatePreset) {
+    const now = new Date();
+    const today = formatLocalIsoDate(now);
+    if (state.dueDatePreset === "overdue") {
+      result = result.filter((issue) => issue.dueDate != null && issue.dueDate < today);
+    } else if (state.dueDatePreset === "due_today") {
+      result = result.filter((issue) => issue.dueDate === today);
+    } else if (state.dueDatePreset === "due_this_week") {
+      const weekOut = new Date(now);
+      weekOut.setDate(weekOut.getDate() + 7);
+      const weekEnd = formatLocalIsoDate(weekOut);
+      result = result.filter(
+        (issue) => issue.dueDate != null && issue.dueDate >= today && issue.dueDate <= weekEnd,
+      );
+    }
+  }
   return result;
 }
 
@@ -183,5 +246,6 @@ export function countActiveIssueFilters(
   if (state.workspaces.length > 0) count += 1;
   if (state.liveOnly) count += 1;
   if (enableRoutineVisibilityFilter && state.hideRoutineExecutions) count += 1;
+  if (state.dueDatePreset) count += 1;
   return count;
 }

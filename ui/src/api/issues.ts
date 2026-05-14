@@ -47,6 +47,9 @@ export const issuesApi = {
       originKindPrefix?: string;
       originId?: string;
       descendantOf?: string;
+      dueBefore?: string;
+      dueAfter?: string;
+      overdue?: boolean;
       includeRoutineExecutions?: boolean;
       includeBlockedBy?: boolean;
       q?: string;
@@ -71,6 +74,9 @@ export const issuesApi = {
     if (filters?.originKindPrefix) params.set("originKindPrefix", filters.originKindPrefix);
     if (filters?.originId) params.set("originId", filters.originId);
     if (filters?.descendantOf) params.set("descendantOf", filters.descendantOf);
+    if (filters?.dueBefore) params.set("dueBefore", filters.dueBefore);
+    if (filters?.dueAfter) params.set("dueAfter", filters.dueAfter);
+    if (filters?.overdue) params.set("overdue", "true");
     if (filters?.includeRoutineExecutions) params.set("includeRoutineExecutions", "true");
     if (filters?.includeBlockedBy) params.set("includeBlockedBy", "true");
     if (filters?.q) params.set("q", filters.q);
