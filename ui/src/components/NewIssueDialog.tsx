@@ -51,7 +51,6 @@ import {
   ArrowDown,
   AlertTriangle,
   Tag,
-  Calendar,
   Paperclip,
   FileText,
   Flag,
@@ -67,6 +66,7 @@ import { issueStatusText, issueStatusTextDefault, priorityColor, priorityColorDe
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
 import { AgentIcon } from "./AgentIconPicker";
 import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
+import { DueDateChip } from "./DueDateChip";
 
 const DRAFT_KEY = "paperclip:issue-draft";
 const DEBOUNCE_MS = 800;
@@ -1901,6 +1901,12 @@ export function NewIssueDialog() {
             </PopoverContent>
           </Popover>
 
+          {/* Due date chip */}
+          <DueDateChip
+            dueDate={dueDate ? dueDate : null}
+            onChange={(next) => setDueDate(next ?? "")}
+          />
+
           {/* Labels chip — disabled, not wired up yet */}
           {/* <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors text-muted-foreground">
             <Tag className="h-3 w-3" />
@@ -1966,28 +1972,6 @@ export function NewIssueDialog() {
             </PopoverContent>
           </Popover>
 
-          {/* Due date */}
-          <div className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs">
-            <Calendar className="h-3 w-3 text-muted-foreground" />
-            <input
-              type="date"
-              className="bg-transparent outline-none text-xs w-28"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              placeholder="Due date"
-              aria-label="Due date"
-            />
-            {dueDate && (
-              <button
-                type="button"
-                className="text-muted-foreground hover:text-foreground"
-                onClick={() => setDueDate("")}
-                aria-label="Clear due date"
-              >
-                ×
-              </button>
-            )}
-          </div>
         </div>
 
         {assigneeValue && status === "backlog" ? (

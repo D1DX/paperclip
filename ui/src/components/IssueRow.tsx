@@ -151,7 +151,7 @@ export function IssueRow({
               </span>
               {issue.dueDate ? (
                 <span
-                  className="hidden shrink-0 items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline-flex"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground"
                   title={`Due ${issue.dueDate}`}
                 >
                   <Calendar className="h-2.5 w-2.5" />

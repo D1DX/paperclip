@@ -32,6 +32,7 @@ import { RetryErrorBand } from "./IssueScheduledRetryCard";
 import { extractProviderIdWithFallback } from "../lib/model-utils";
 import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
+import { DueDateChip } from "./DueDateChip";
 import { Identity } from "./Identity";
 import { IssueReferencePill } from "./IssueReferencePill";
 import { formatDate, formatDateTime, cn, projectUrl } from "../lib/utils";
@@ -1743,6 +1744,13 @@ export function IssueProperties({
             priority={issue.priority}
             onChange={(priority) => onUpdate({ priority })}
             showLabel
+          />
+        </PropertyRow>
+
+        <PropertyRow label="Due date">
+          <DueDateChip
+            dueDate={issue.dueDate}
+            onChange={(dueDate) => onUpdate({ dueDate })}
           />
         </PropertyRow>
 

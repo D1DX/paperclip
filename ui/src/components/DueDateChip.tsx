@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { Calendar } from "lucide-react";
 
 interface DueDateChipProps {
@@ -8,30 +9,67 @@ interface DueDateChipProps {
 
 export function DueDateChip({ dueDate, onChange, className }: DueDateChipProps) {
   const value = dueDate ?? "";
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const openPicker = () => {
+    const input = inputRef.current;
+    if (!input) return;
+    // showPicker() is the modern path; some browsers/embedded webviews lack it,
+    // so fall back to focus() which surfaces the native control on most platforms.
+    if (typeof input.showPicker === "function") {
+      try {
+        input.showPicker();
+        return;
+      } catch {
+        // Fall through to focus().
+      }
+    }
+    input.focus();
+  };
+
   return (
     <div
       className={
-        "inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-0.5 text-xs shrink-0 " +
-        (className ?? "")
+        "relative inline-flex items-center shrink-0 " + (className ?? "")
       }
     >
-      <Calendar className="h-3 w-3 text-muted-foreground" />
+      {/* Hidden native input — covers the chip so click-anywhere also opens the picker. */}
       <input
+        ref={inputRef}
         type="date"
-        className="bg-transparent outline-none text-xs w-28"
+        className="absolute inset-0 opacity-0 cursor-pointer"
         value={value}
         onChange={(e) => onChange(e.target.value ? e.target.value : null)}
-        placeholder="Due date"
         aria-label="Due date"
       />
-      {value && (
+      {value ? (
+        <span
+          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-0.5 text-xs"
+          title={`Due ${value}`}
+        >
+          <Calendar className="h-3 w-3 text-muted-foreground" />
+          <span>{value}</span>
+          <button
+            type="button"
+            className="text-muted-foreground hover:text-foreground relative z-10"
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange(null);
+            }}
+            aria-label="Clear due date"
+          >
+            ×
+          </button>
+        </span>
+      ) : (
         <button
           type="button"
-          className="text-muted-foreground hover:text-foreground"
-          onClick={() => onChange(null)}
-          aria-label="Clear due date"
+          className="inline-flex items-center justify-center h-6 w-6 rounded-md border border-border text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+          onClick={openPicker}
+          aria-label="Set due date"
+          title="Set due date"
         >
-          ×
+          <Calendar className="h-3 w-3" />
         </button>
       )}
     </div>
