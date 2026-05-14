@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatAssigneeUserLabel } from "../lib/assignees";
+import { describeDueDate, dueDateUrgency } from "../lib/dueDate";
 import type { InboxIssueColumn } from "../lib/inbox";
 import { cn } from "../lib/utils";
 import { timeAgo } from "../lib/timeAgo";
@@ -382,11 +383,18 @@ export function InboxIssueTrailingColumns({
           if (!issue.dueDate) {
             return <span key={column} className="min-w-0" aria-hidden="true" />;
           }
+          const urgency = dueDateUrgency(issue.dueDate);
+          const isUrgent = urgency === "overdue" || urgency === "today";
           return (
             <span
               key={column}
-              className="inline-flex min-w-0 shrink-0 items-center gap-1 truncate rounded-md border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground"
-              title={`Due ${issue.dueDate}`}
+              className={cn(
+                "inline-flex min-w-0 shrink-0 items-center gap-1 truncate rounded-md border px-1.5 py-0.5 text-[10px]",
+                isUrgent
+                  ? "border-red-500/60 bg-red-500/10 text-red-700 dark:bg-red-500/15 dark:text-red-300"
+                  : "border-border bg-muted/50 text-foreground/80 dark:bg-white/5 dark:text-muted-foreground",
+              )}
+              title={describeDueDate(issue.dueDate) ?? `Due ${issue.dueDate}`}
             >
               <Calendar className="h-2.5 w-2.5 shrink-0" aria-hidden />
               <span className="truncate">{issue.dueDate}</span>

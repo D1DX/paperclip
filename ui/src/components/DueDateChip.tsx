@@ -1,5 +1,7 @@
 import { useRef } from "react";
 import { Calendar } from "lucide-react";
+import { describeDueDate, dueDateUrgency } from "../lib/dueDate";
+import { cn } from "../lib/utils";
 
 interface DueDateChipProps {
   dueDate: string | null;
@@ -10,6 +12,8 @@ interface DueDateChipProps {
 export function DueDateChip({ dueDate, onChange, className }: DueDateChipProps) {
   const value = dueDate ?? "";
   const inputRef = useRef<HTMLInputElement>(null);
+  const urgency = dueDateUrgency(dueDate);
+  const isUrgent = urgency === "overdue" || urgency === "today";
 
   const openPicker = () => {
     const input = inputRef.current;
@@ -44,14 +48,24 @@ export function DueDateChip({ dueDate, onChange, className }: DueDateChipProps) 
       />
       {value ? (
         <span
-          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-0.5 text-xs"
-          title={`Due ${value}`}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs",
+            isUrgent
+              ? "border-red-500/60 bg-red-500/10 text-red-700 dark:bg-red-500/15 dark:text-red-300"
+              : "border-border bg-muted/50 text-foreground/90 dark:bg-white/5 dark:text-foreground",
+          )}
+          title={describeDueDate(value) ?? `Due ${value}`}
         >
-          <Calendar className="h-3 w-3 text-muted-foreground" />
+          <Calendar className={cn("h-3 w-3", isUrgent ? "" : "text-muted-foreground")} />
           <span>{value}</span>
           <button
             type="button"
-            className="text-muted-foreground hover:text-foreground relative z-10"
+            className={cn(
+              "relative z-10",
+              isUrgent
+                ? "text-red-700/80 hover:text-red-700 dark:text-red-300/80 dark:hover:text-red-200"
+                : "text-muted-foreground hover:text-foreground",
+            )}
             onClick={(e) => {
               e.stopPropagation();
               onChange(null);
