@@ -175,6 +175,11 @@ function formatChangedEntityLabel(
   return `${labels.length} ${plural}`;
 }
 
+function formatDueDateValue(value: unknown): string {
+  if (typeof value !== "string" || !value) return "none";
+  return value;
+}
+
 function formatIssueUpdatedVerb(details: ActivityDetails): string | null {
   if (!details) return null;
   const previous = asRecord(details._previous) ?? {};
@@ -189,6 +194,16 @@ function formatIssueUpdatedVerb(details: ActivityDetails): string | null {
     return from
       ? `changed priority from ${humanizeValue(from)} to ${humanizeValue(details.priority)} on`
       : `changed priority to ${humanizeValue(details.priority)} on`;
+  }
+  if (details.dueDate !== undefined) {
+    const to = details.dueDate;
+    const from = previous.dueDate;
+    if (to === null || to === "") {
+      return from ? `cleared due date (was ${formatDueDateValue(from)}) on` : "cleared due date on";
+    }
+    return from
+      ? `changed due date from ${formatDueDateValue(from)} to ${formatDueDateValue(to)} on`
+      : `set due date to ${formatDueDateValue(to)} on`;
   }
   return null;
 }
@@ -226,6 +241,19 @@ function formatIssueUpdatedAction(details: ActivityDetails, options: ActivityFor
         ? `changed the priority from ${humanizeValue(from)} to ${humanizeValue(details.priority)}`
         : `changed the priority to ${humanizeValue(details.priority)}`,
     );
+  }
+  if (details.dueDate !== undefined) {
+    const to = details.dueDate;
+    const from = previous.dueDate;
+    if (to === null || to === "") {
+      parts.push(from ? `cleared the due date (was ${formatDueDateValue(from)})` : "cleared the due date");
+    } else {
+      parts.push(
+        from
+          ? `changed the due date from ${formatDueDateValue(from)} to ${formatDueDateValue(to)}`
+          : `set the due date to ${formatDueDateValue(to)}`,
+      );
+    }
   }
   if (details.assigneeAgentId !== undefined || details.assigneeUserId !== undefined) {
     const assigneeName = formatAssigneeName(details, options);

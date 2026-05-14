@@ -64,12 +64,13 @@ export function DueDateChip({ dueDate, onChange, className }: DueDateChipProps) 
       ) : (
         <button
           type="button"
-          className="inline-flex items-center justify-center h-6 w-6 rounded-md border border-border text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+          className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground hover:border-border"
           onClick={openPicker}
           aria-label="Set due date"
           title="Set due date"
         >
           <Calendar className="h-3 w-3" />
+          <span>Set date</span>
         </button>
       )}
     </div>

@@ -66,6 +66,29 @@ describe("activity formatting", () => {
     expect(formatIssueActivityAction("issue.monitor_recovery_issue_created")).toBe("created a monitor recovery issue");
   });
 
+  it("formats dueDate set / change / clear on issue.updated", () => {
+    // Set from null
+    const setDetails = { dueDate: "2026-06-01", _previous: { dueDate: null } };
+    expect(formatActivityVerb("issue.updated", setDetails)).toBe("set due date to 2026-06-01 on");
+    expect(formatIssueActivityAction("issue.updated", setDetails)).toBe("set the due date to 2026-06-01");
+
+    // Change from one date to another
+    const changeDetails = { dueDate: "2026-06-08", _previous: { dueDate: "2026-06-01" } };
+    expect(formatActivityVerb("issue.updated", changeDetails)).toBe(
+      "changed due date from 2026-06-01 to 2026-06-08 on",
+    );
+    expect(formatIssueActivityAction("issue.updated", changeDetails)).toBe(
+      "changed the due date from 2026-06-01 to 2026-06-08",
+    );
+
+    // Clear (null) from a prior date
+    const clearDetails = { dueDate: null, _previous: { dueDate: "2026-06-01" } };
+    expect(formatActivityVerb("issue.updated", clearDetails)).toBe("cleared due date (was 2026-06-01) on");
+    expect(formatIssueActivityAction("issue.updated", clearDetails)).toBe(
+      "cleared the due date (was 2026-06-01)",
+    );
+  });
+
   it("uses plain next-step copy for successful-run handoff activity", () => {
     expect(formatActivityVerb("issue.successful_run_handoff_required")).toBe("flagged missing next step on");
     expect(formatIssueActivityAction("issue.successful_run_handoff_required")).toBe("Run finished without a clear next step");
