@@ -226,6 +226,7 @@ const createIssueBaseSchema = z.object({
   status: z.enum(ISSUE_STATUSES),
   workMode: z.enum(ISSUE_WORK_MODES).optional().default("standard"),
   priority: z.enum(ISSUE_PRIORITIES).optional().default("medium"),
+  dueDate: z.string().optional().nullable(),
   assigneeAgentId: z.string().uuid().optional().nullable(),
   assigneeUserId: z.string().optional().nullable(),
   requestDepth: issueRequestDepthInputSchema.optional().default(0),

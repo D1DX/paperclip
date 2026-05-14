@@ -335,6 +335,7 @@ export interface Issue {
   status: IssueStatus;
   workMode: IssueWorkMode;
   priority: IssuePriority;
+  dueDate: string | null;
   assigneeAgentId: string | null;
   assigneeUserId: string | null;
   checkoutRunId: string | null;

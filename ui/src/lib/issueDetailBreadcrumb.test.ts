@@ -44,6 +44,7 @@ describe("issueDetailBreadcrumb", () => {
       description: null,
       status: "todo",
       priority: "medium",
+      dueDate: null,
       assigneeAgentId: null,
       assigneeUserId: null,
       checkoutRunId: null,

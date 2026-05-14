@@ -1259,6 +1259,7 @@ export interface PluginIssuesClient {
     status?: Issue["status"];
     workMode?: Issue["workMode"];
     priority?: Issue["priority"];
+    dueDate?: string | null;
     assigneeAgentId?: string;
     assigneeUserId?: string | null;
     requestDepth?: number;
@@ -1283,6 +1284,7 @@ export interface PluginIssuesClient {
       | "status"
       | "workMode"
       | "priority"
+      | "dueDate"
       | "assigneeAgentId"
       | "assigneeUserId"
       | "billingCode"

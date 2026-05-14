@@ -217,6 +217,7 @@ function createIssue(): Issue {
     status: "in_progress",
     workMode: "standard",
     priority: "medium",
+    dueDate: null,
     assigneeAgentId: null,
     assigneeUserId: null,
     createdByAgentId: null,
