@@ -1126,13 +1126,24 @@ describe("inbox helpers", () => {
 
     expect(loadInboxIssueColumns()).toEqual(["status", "assignee", "workspace", "labels", "updated"]);
     expect(normalizeInboxIssueColumns(["project", "workspace", "wat", "id"])).toEqual(["id", "project", "workspace"]);
+    expect(normalizeInboxIssueColumns(["dueDate", "id", "status"])).toEqual(["status", "id", "dueDate"]);
   });
 
   it("hides the workspace column option unless isolated workspaces are enabled", () => {
-    expect(getAvailableInboxIssueColumns(false)).toEqual(["status", "id", "assignee", "project", "parent", "labels", "updated"]);
+    expect(getAvailableInboxIssueColumns(false)).toEqual([
+      "status",
+      "id",
+      "dueDate",
+      "assignee",
+      "project",
+      "parent",
+      "labels",
+      "updated",
+    ]);
     expect(getAvailableInboxIssueColumns(true)).toEqual([
       "status",
       "id",
+      "dueDate",
       "assignee",
       "project",
       "workspace",

@@ -2220,6 +2220,7 @@ export function Inbox() {
                             isLive={liveIssueIds.has(issue.id)}
                             showStatus={visibleIssueColumnSet.has("status") && availableIssueColumnSet.has("status")}
                             showIdentifier={visibleIssueColumnSet.has("id") && availableIssueColumnSet.has("id")}
+                            showDueDate={visibleIssueColumnSet.has("dueDate") && availableIssueColumnSet.has("dueDate")}
                           />
                         </>
                       }

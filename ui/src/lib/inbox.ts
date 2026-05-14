@@ -38,6 +38,7 @@ export type InboxWorkItemGroupBy = "none" | "type" | "assignee" | "project" | "w
 export const inboxIssueColumns = [
   "status",
   "id",
+  "dueDate",
   "assignee",
   "project",
   "workspace",
@@ -46,7 +47,7 @@ export const inboxIssueColumns = [
   "updated",
 ] as const;
 export type InboxIssueColumn = (typeof inboxIssueColumns)[number];
-export const DEFAULT_INBOX_ISSUE_COLUMNS: InboxIssueColumn[] = ["status", "id", "updated"];
+export const DEFAULT_INBOX_ISSUE_COLUMNS: InboxIssueColumn[] = ["status", "id", "dueDate", "updated"];
 export interface InboxFilterPreferences {
   allCategoryFilter: InboxCategoryFilter;
   allApprovalFilter: InboxApprovalFilter;
