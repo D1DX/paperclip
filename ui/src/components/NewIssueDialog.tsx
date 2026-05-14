@@ -421,6 +421,7 @@ export function NewIssueDialog() {
   const [participantMenuOpen, setParticipantMenuOpen] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [projectWorkspaceId, setProjectWorkspaceId] = useState("");
+  const [dueDate, setDueDate] = useState("");
   const [assigneeOptionsOpen, setAssigneeOptionsOpen] = useState(false);
   const [assigneeModelLane, setAssigneeModelLane] = useState<IssueModelLane>("primary");
   const [assigneeModelOverride, setAssigneeModelOverride] = useState("");
@@ -449,7 +450,6 @@ export function NewIssueDialog() {
   const [statusOpen, setStatusOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [workModeOpen, setWorkModeOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
   const [companyOpen, setCompanyOpen] = useState(false);
   const descriptionEditorRef = useRef<MarkdownEditorRef>(null);
   const stageFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -889,6 +889,7 @@ export function NewIssueDialog() {
     setIssueText("", "");
     setStatus("todo");
     setPriority("");
+    setDueDate("");
     setAssigneeValue("");
     setReviewerValue("");
     setApproverValue("");
@@ -982,6 +983,7 @@ export function NewIssueDialog() {
       status,
       priority: priority || "medium",
       workMode,
+      ...(dueDate ? { dueDate } : {}),
       ...(selectedAssigneeAgentId ? { assigneeAgentId: selectedAssigneeAgentId } : {}),
       ...(selectedAssigneeUserId ? { assigneeUserId: selectedAssigneeUserId } : {}),
       ...(newIssueDefaults.parentId ? { parentId: newIssueDefaults.parentId } : {}),
@@ -1964,24 +1966,28 @@ export function NewIssueDialog() {
             </PopoverContent>
           </Popover>
 
-          {/* More (dates) */}
-          <Popover open={moreOpen} onOpenChange={setMoreOpen}>
-            <PopoverTrigger asChild>
-              <button className="inline-flex items-center justify-center rounded-md border border-border p-1 text-xs hover:bg-accent/50 transition-colors text-muted-foreground">
-                <MoreHorizontal className="h-3 w-3" />
+          {/* Due date */}
+          <div className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs">
+            <Calendar className="h-3 w-3 text-muted-foreground" />
+            <input
+              type="date"
+              className="bg-transparent outline-none text-xs w-28"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              placeholder="Due date"
+              aria-label="Due date"
+            />
+            {dueDate && (
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => setDueDate("")}
+                aria-label="Clear due date"
+              >
+                ×
               </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-44 p-1" align="start">
-              <button className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-muted-foreground">
-                <Calendar className="h-3 w-3" />
-                Start date
-              </button>
-              <button className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-muted-foreground">
-                <Calendar className="h-3 w-3" />
-                Due date
-              </button>
-            </PopoverContent>
-          </Popover>
+            )}
+          </div>
         </div>
 
         {assigneeValue && status === "backlog" ? (

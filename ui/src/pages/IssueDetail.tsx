@@ -80,6 +80,7 @@ import { ImageGalleryModal } from "../components/ImageGalleryModal";
 import { ScrollToBottom } from "../components/ScrollToBottom";
 import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
+import { DueDateChip } from "../components/DueDateChip";
 import { ProductivityReviewBadge } from "../components/ProductivityReviewBadge";
 import { Identity } from "../components/Identity";
 import { PluginSlotMount, PluginSlotOutlet, usePluginSlots } from "@/plugins/slots";
@@ -117,6 +118,7 @@ import {
   Archive,
   ArrowLeft,
   Check,
+  Calendar,
   ChevronRight,
   Copy,
   Eye,
@@ -3209,6 +3211,10 @@ export function IssueDetail() {
           <PriorityIcon
             priority={issue.priority}
             onChange={(priority) => updateIssue.mutate({ priority })}
+          />
+          <DueDateChip
+            dueDate={issue.dueDate}
+            onChange={(dueDate) => updateIssue.mutate({ dueDate })}
           />
           <span className="text-sm font-mono text-muted-foreground shrink-0">{issue.identifier ?? issue.id.slice(0, 8)}</span>
 

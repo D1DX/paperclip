@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { Issue } from "@paperclipai/shared";
 import { Link } from "@/lib/router";
-import { Eye, Flag, X } from "lucide-react";
+import { Calendar, Eye, Flag, X } from "lucide-react";
 import {
   createIssueDetailPath,
   rememberIssueDetailLocationState,
@@ -149,6 +149,15 @@ export function IssueRow({
               <span className="shrink-0 font-mono text-xs text-muted-foreground">
                 {identifier}
               </span>
+              {issue.dueDate ? (
+                <span
+                  className="hidden shrink-0 items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline-flex"
+                  title={`Due ${issue.dueDate}`}
+                >
+                  <Calendar className="h-2.5 w-2.5" />
+                  {issue.dueDate}
+                </span>
+              ) : null}
               {planningModeIndicator}
               {parkedBlockerIndicator}
             </>
