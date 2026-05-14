@@ -1702,7 +1702,6 @@ export function IssuesList({
                               isLive={liveIssueIds?.has(issue.id) === true}
                               showStatus={visibleIssueColumnSet.has("status") && availableIssueColumnSet.has("status")}
                               showIdentifier={visibleIssueColumnSet.has("id") && availableIssueColumnSet.has("id")}
-                              showDueDate={visibleIssueColumnSet.has("dueDate") && availableIssueColumnSet.has("dueDate")}
                               checklistStepNumber={checklistStepNumber}
                               statusSlot={(
                                 <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>

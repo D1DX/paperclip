@@ -20,7 +20,7 @@ import { timeAgo } from "../lib/timeAgo";
 import { Identity } from "./Identity";
 import { StatusIcon } from "./StatusIcon";
 
-export const issueTrailingColumns: InboxIssueColumn[] = ["assignee", "project", "workspace", "parent", "labels", "updated"];
+export const issueTrailingColumns: InboxIssueColumn[] = ["dueDate", "assignee", "project", "workspace", "parent", "labels", "updated"];
 
 const issueColumnLabels: Record<InboxIssueColumn, string> = {
   status: "Status",
@@ -37,7 +37,7 @@ const issueColumnLabels: Record<InboxIssueColumn, string> = {
 const issueColumnDescriptions: Record<InboxIssueColumn, string> = {
   status: "Issue state chip on the left edge.",
   id: "Ticket identifier like PAP-1009.",
-  dueDate: "Due-date chip next to the identifier (only visible when a date is set).",
+  dueDate: "Date this issue is due by. Hidden when not set.",
   assignee: "Assigned agent or board user.",
   project: "Linked project pill with its color.",
   workspace: "Execution or project workspace used for the issue.",
@@ -58,6 +58,7 @@ function issueTrailingGridTemplate(columns: InboxIssueColumn[]): string {
       if (column === "workspace") return "minmax(6rem, 9rem)";
       if (column === "parent") return "minmax(3.5rem, 5.5rem)";
       if (column === "labels") return "minmax(3rem, 6rem)";
+      if (column === "dueDate") return "minmax(5.5rem, 7rem)";
       return "minmax(3.5rem, 4.5rem)";
     })
     .join(" ");
@@ -140,7 +141,6 @@ export function InboxIssueMetaLeading({
   isLive,
   showStatus = true,
   showIdentifier = true,
-  showDueDate = true,
   statusSlot,
   checklistStepNumber = null,
 }: {
@@ -148,7 +148,6 @@ export function InboxIssueMetaLeading({
   isLive: boolean;
   showStatus?: boolean;
   showIdentifier?: boolean;
-  showDueDate?: boolean;
   statusSlot?: ReactNode;
   checklistStepNumber?: number | string | null;
 }) {
@@ -167,15 +166,6 @@ export function InboxIssueMetaLeading({
       {showIdentifier ? (
         <span className="shrink-0 font-mono text-xs text-muted-foreground">
           {issue.identifier ?? issue.id.slice(0, 8)}
-        </span>
-      ) : null}
-      {showDueDate && issue.dueDate ? (
-        <span
-          className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground"
-          title={`Due ${issue.dueDate}`}
-        >
-          <Calendar className="h-2.5 w-2.5" />
-          {issue.dueDate}
         </span>
       ) : null}
       {isLive && (
@@ -384,6 +374,22 @@ export function InboxIssueTrailingColumns({
               ) : (
                 <span className="italic">Sub-issue</span>
               )}
+            </span>
+          );
+        }
+
+        if (column === "dueDate") {
+          if (!issue.dueDate) {
+            return <span key={column} className="min-w-0" aria-hidden="true" />;
+          }
+          return (
+            <span
+              key={column}
+              className="inline-flex min-w-0 shrink-0 items-center gap-1 truncate rounded-md border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground"
+              title={`Due ${issue.dueDate}`}
+            >
+              <Calendar className="h-2.5 w-2.5 shrink-0" aria-hidden />
+              <span className="truncate">{issue.dueDate}</span>
             </span>
           );
         }
