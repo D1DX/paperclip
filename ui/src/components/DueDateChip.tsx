@@ -37,24 +37,37 @@ export function DueDateChip({ dueDate, onChange, className }: DueDateChipProps) 
         "relative inline-flex items-center shrink-0 " + (className ?? "")
       }
     >
-      {/* Hidden native input — covers the chip so click-anywhere also opens the picker. */}
+      {/* Hidden native input — receives onChange when the picker selects a date.
+          pointer-events-none so the visible chip below is the click target;
+          the picker is opened programmatically via showPicker() from openPicker(). */}
       <input
         ref={inputRef}
         type="date"
-        className="absolute inset-0 opacity-0 cursor-pointer"
+        className="absolute inset-0 opacity-0 pointer-events-none"
         value={value}
         onChange={(e) => onChange(e.target.value ? e.target.value : null)}
-        aria-label="Due date"
+        aria-hidden="true"
+        tabIndex={-1}
       />
       {value ? (
         <span
+          role="button"
+          tabIndex={0}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs",
+            "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs cursor-pointer",
             isUrgent
               ? "border-red-500/60 bg-red-500/10 text-red-700 dark:bg-red-500/15 dark:text-red-300"
               : "border-border bg-muted/50 text-foreground/90 dark:bg-white/5 dark:text-foreground",
           )}
           title={describeDueDate(value) ?? `Due ${value}`}
+          aria-label={`Due ${value} — click to change`}
+          onClick={openPicker}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              openPicker();
+            }
+          }}
         >
           <Calendar className={cn("h-3 w-3", isUrgent ? "" : "text-muted-foreground")} />
           <span>{value}</span>
