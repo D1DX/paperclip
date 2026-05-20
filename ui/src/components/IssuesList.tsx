@@ -61,7 +61,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
-import { CircleDot, Plus, ArrowUpDown, Layers, Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, List, ListTree, Columns3, User, Search, CircleSlash2 } from "lucide-react";
+import { CircleDot, Plus, ArrowUpDown, Layers, Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, List, ListTree, Columns3, User, UserX, Search, CircleSlash2 } from "lucide-react";
 import { KanbanBoard } from "./KanbanBoard";
 import { buildIssueTree, countDescendants } from "../lib/issue-tree";
 import { buildSubIssueDefaultsForViewer } from "../lib/subIssueDefaults";
@@ -120,6 +120,7 @@ export type IssueViewState = IssueFilterState & {
   nestingEnabled: boolean;
   collapsedGroups: string[];
   collapsedParents: string[];
+  hidePendingClient: boolean;
 };
 
 const defaultViewState: IssueViewState = {
@@ -131,6 +132,7 @@ const defaultViewState: IssueViewState = {
   nestingEnabled: true,
   collapsedGroups: [],
   collapsedParents: [],
+  hidePendingClient: false,
 };
 
 function getViewState(key: string): IssueViewState {
@@ -935,6 +937,17 @@ export function IssuesList({
     [boardIssueQueries, searchWithinLoadedIssues, viewState.viewMode],
   );
 
+  const { data: labels } = useQuery({
+    queryKey: queryKeys.issues.labels(selectedCompanyId!),
+    queryFn: () => issuesApi.listLabels(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const pendingClientLabelId = useMemo(
+    () => labels?.find((label) => label.name.trim().toLowerCase() === "pending client")?.id ?? null,
+    [labels],
+  );
+
   const filtered = useMemo(() => {
     const useRemoteSearch = normalizedIssueSearch.length > 0 && !searchWithinLoadedIssues;
     const sourceIssues = boardIssues ?? (useRemoteSearch ? searchedIssues : issues);
@@ -949,7 +962,10 @@ export function IssuesList({
       liveIssueIds,
       issueFilterWorkspaceContext,
     );
-    return sortIssues(filteredByControls, viewState);
+    const withoutPendingClient = viewState.hidePendingClient && pendingClientLabelId
+      ? filteredByControls.filter((issue) => !(issue.labelIds ?? []).includes(pendingClientLabelId))
+      : filteredByControls;
+    return sortIssues(withoutPendingClient, viewState);
   }, [
     boardIssues,
     issues,
@@ -961,6 +977,7 @@ export function IssuesList({
     enableRoutineVisibilityFilter,
     liveIssueIds,
     issueFilterWorkspaceContext,
+    pendingClientLabelId,
   ]);
 
   const progressSummary = useMemo(
@@ -1009,12 +1026,6 @@ export function IssuesList({
       currentStepIssueId: currentStepIssue?.id ?? null,
     };
   }, [checklistAffordanceEnabled, filtered, issueById, viewState.nestingEnabled]);
-
-  const { data: labels } = useQuery({
-    queryKey: queryKeys.issues.labels(selectedCompanyId!),
-    queryFn: () => issuesApi.listLabels(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
-  });
 
   const activeFilterCount = countActiveIssueFilters(viewState, enableRoutineVisibilityFilter);
 
@@ -1353,6 +1364,20 @@ export function IssuesList({
               </Button>
             );
           })()}
+
+          {pendingClientLabelId && (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className={cn("hidden h-8 w-8 shrink-0 sm:inline-flex", viewState.hidePendingClient && "bg-accent")}
+              onClick={() => updateView({ hidePendingClient: !viewState.hidePendingClient })}
+              title={viewState.hidePendingClient ? "Show issues pending client" : "Hide issues pending client"}
+              aria-label={viewState.hidePendingClient ? "Show issues labeled pending client" : "Hide issues labeled pending client"}
+            >
+              <UserX className="h-3.5 w-3.5" />
+            </Button>
+          )}
 
           <IssueColumnPicker
             availableColumns={availableIssueColumns}
