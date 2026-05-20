@@ -63,6 +63,7 @@ import type {
   AdapterEnvironmentTestResult,
 } from "@paperclipai/adapter-utils";
 import { secretService } from "../services/secrets.js";
+import { isOperatorAgentLive, listLiveAgentIds } from "../services/presence.js";
 import {
   detectAdapterModel,
   findActiveServerAdapter,
@@ -512,15 +513,17 @@ export function agentRoutes(
     agent: NonNullable<Awaited<ReturnType<typeof svc.getById>>>,
     options?: { restricted?: boolean },
   ) {
-    const [chainOfCommand, accessState] = await Promise.all([
+    const [chainOfCommand, accessState, isLive] = await Promise.all([
       svc.getChainOfCommand(agent.id),
       buildAgentAccessState(agent),
+      isOperatorAgentLive(db, agent.companyId, agent.id),
     ]);
 
     return {
       ...(options?.restricted ? redactForRestrictedAgentView(agent) : agent),
       chainOfCommand,
       access: accessState,
+      isLive,
     };
   }
 
@@ -1611,12 +1614,16 @@ export function agentRoutes(
       return;
     }
     const result = await svc.list(companyId);
+    const liveAgentIds = await listLiveAgentIds(db, companyId);
     const canReadConfigs = await actorCanReadConfigurationsForCompany(req, companyId);
-    if (canReadConfigs) {
-      res.json(result);
-      return;
-    }
-    res.json(result.map((agent) => redactForRestrictedAgentView(agent)));
+    const shaped = canReadConfigs
+      ? result
+      : result.map((agent) => redactForRestrictedAgentView(agent));
+    res.json(
+      shaped.map((agent) =>
+        agent ? { ...agent, isLive: liveAgentIds.has(agent.id) } : agent,
+      ),
+    );
   });
 
   router.get("/instance/scheduler-heartbeats", async (req, res) => {

@@ -94,6 +94,12 @@ export interface Agent {
   metadata: Record<string, unknown> | null;
   createdAt: Date;
   updatedAt: Date;
+  /**
+   * Derived (D-1155): true while an operator-paced session is actively
+   * working — a fresh `operator_presence` row exists. Not a stored column;
+   * only the agent list + detail endpoints populate it.
+   */
+  isLive?: boolean;
 }
 
 export interface AgentDetail extends Agent {
