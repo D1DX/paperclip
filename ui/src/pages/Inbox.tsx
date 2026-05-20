@@ -25,6 +25,7 @@ import {
   type IssueFilterState,
 } from "../lib/issue-filters";
 import { collectLiveIssueIds } from "../lib/liveIssueIds";
+import { useLivePresenceIssueIds } from "../hooks/useLivePresenceIssueIds";
 import { formatAssigneeUserLabel } from "../lib/assignees";
 import { buildCompanyUserLabelMap, buildCompanyUserProfileMap } from "../lib/company-members";
 import {
@@ -831,7 +832,11 @@ export function Inbox() {
     enabled: !!selectedCompanyId,
     refetchInterval: 5000,
   });
-  const liveIssueIds = useMemo(() => collectLiveIssueIds(liveRuns), [liveRuns]);
+  const presenceIssueIds = useLivePresenceIssueIds(selectedCompanyId);
+  const liveIssueIds = useMemo(
+    () => new Set([...collectLiveIssueIds(liveRuns), ...presenceIssueIds]),
+    [liveRuns, presenceIssueIds],
+  );
   const { data: companyMembers } = useQuery({
     queryKey: queryKeys.access.companyUserDirectory(selectedCompanyId!),
     queryFn: () => accessApi.listUserDirectory(selectedCompanyId!),

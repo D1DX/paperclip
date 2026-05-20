@@ -33,6 +33,7 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { useToastActions } from "../context/ToastContext";
 import { collectLiveIssueIds } from "../lib/liveIssueIds";
+import { useLivePresenceIssueIds } from "../hooks/useLivePresenceIssueIds";
 import { queryKeys } from "../lib/queryKeys";
 import { cn, formatDateTime, issueUrl, projectRouteRef, projectWorkspaceUrl } from "../lib/utils";
 import {
@@ -299,7 +300,11 @@ function ExecutionWorkspaceIssuesList({
     refetchInterval: 5000,
   });
 
-  const liveIssueIds = useMemo(() => collectLiveIssueIds(liveRuns), [liveRuns]);
+  const presenceIssueIds = useLivePresenceIssueIds(companyId);
+  const liveIssueIds = useMemo(
+    () => new Set([...collectLiveIssueIds(liveRuns), ...presenceIssueIds]),
+    [liveRuns, presenceIssueIds],
+  );
 
   const updateIssue = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => issuesApi.update(id, data),

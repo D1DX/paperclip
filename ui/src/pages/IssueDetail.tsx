@@ -24,6 +24,7 @@ import { extractIssueTimelineEvents } from "../lib/issue-timeline-events";
 import { queryKeys } from "../lib/queryKeys";
 import { keepPreviousDataForSameQueryTail } from "../lib/query-placeholder-data";
 import { collectLiveIssueIds } from "../lib/liveIssueIds";
+import { useLivePresenceIssueIds } from "../hooks/useLivePresenceIssueIds";
 import {
   hasLegacyIssueDetailQuery,
   createIssueDetailPath,
@@ -1490,7 +1491,11 @@ export function IssueDetail() {
     },
     [issue?.id, rawChildIssues],
   );
-  const liveIssueIds = useMemo(() => collectLiveIssueIds(companyLiveRuns), [companyLiveRuns]);
+  const presenceIssueIds = useLivePresenceIssueIds(resolvedCompanyId);
+  const liveIssueIds = useMemo(
+    () => new Set([...collectLiveIssueIds(companyLiveRuns), ...presenceIssueIds]),
+    [companyLiveRuns, presenceIssueIds],
+  );
   const issuePanelKey = useMemo(
     () => buildIssuePropertiesPanelKey(issue ?? null, childIssues),
     [childIssues, issue],

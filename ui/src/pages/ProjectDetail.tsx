@@ -25,6 +25,7 @@ import { PageTabBar } from "../components/PageTabBar";
 import { ProjectWorkspacesContent } from "../components/ProjectWorkspacesContent";
 import { buildProjectWorkspaceSummaries } from "../lib/project-workspaces-tab";
 import { collectLiveIssueIds } from "../lib/liveIssueIds";
+import { useLivePresenceIssueIds } from "../hooks/useLivePresenceIssueIds";
 import { projectRouteRef } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
@@ -177,7 +178,11 @@ function ProjectIssuesList({ projectId, companyId }: { projectId: string; compan
     enabled: !!companyId,
   });
 
-  const liveIssueIds = useMemo(() => collectLiveIssueIds(liveRuns), [liveRuns]);
+  const presenceIssueIds = useLivePresenceIssueIds(companyId);
+  const liveIssueIds = useMemo(
+    () => new Set([...collectLiveIssueIds(liveRuns), ...presenceIssueIds]),
+    [liveRuns, presenceIssueIds],
+  );
 
   const { data: issues, isLoading, error } = useQuery({
     queryKey: queryKeys.issues.listByProject(companyId, projectId),
@@ -237,7 +242,11 @@ function ProjectPluginOperationsList({
     enabled: !!companyId,
     refetchInterval: 5000,
   });
-  const liveIssueIds = useMemo(() => collectLiveIssueIds(liveRuns), [liveRuns]);
+  const presenceIssueIds = useLivePresenceIssueIds(companyId);
+  const liveIssueIds = useMemo(
+    () => new Set([...collectLiveIssueIds(liveRuns), ...presenceIssueIds]),
+    [liveRuns, presenceIssueIds],
+  );
 
   const { data: issues, isLoading, error } = useQuery({
     queryKey: queryKeys.issues.listPluginOperationsByProject(companyId, projectId, originKindPrefix),

@@ -43,6 +43,7 @@ import {
   buildCompanyUserInlineOptions,
 } from "@/lib/company-members";
 import { collectLiveIssueIds } from "@/lib/liveIssueIds";
+import { useLivePresenceIssueIds } from "@/hooks/useLivePresenceIssueIds";
 import { useProjectOrder } from "@/hooks/useProjectOrder";
 import {
   assigneeValueFromSelection,
@@ -276,7 +277,11 @@ function PluginSdkIssuesList({
     enabled: !!companyId,
     refetchInterval: 5000,
   });
-  const liveIssueIds = useMemo(() => collectLiveIssueIds(liveRuns), [liveRuns]);
+  const presenceIssueIds = useLivePresenceIssueIds(companyId);
+  const liveIssueIds = useMemo(
+    () => new Set([...collectLiveIssueIds(liveRuns), ...presenceIssueIds]),
+    [liveRuns, presenceIssueIds],
+  );
 
   const { data: issues, isLoading, error } = useQuery({
     queryKey: issuesQueryKey,

@@ -16,6 +16,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { groupBy } from "../lib/groupBy";
 import { createIssueDetailLocationState } from "../lib/issueDetailBreadcrumb";
 import { collectLiveIssueIds } from "../lib/liveIssueIds";
+import { useLivePresenceIssueIds } from "../hooks/useLivePresenceIssueIds";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
 import { getRecentProjectIds, trackRecentProject } from "../lib/recent-projects";
 import { EmptyState } from "../components/EmptyState";
@@ -416,7 +417,11 @@ export function Routines() {
     () => new Map((projects ?? []).map((project) => [project.id, project])),
     [projects],
   );
-  const liveIssueIds = useMemo(() => collectLiveIssueIds(liveRuns), [liveRuns]);
+  const presenceIssueIds = useLivePresenceIssueIds(selectedCompanyId);
+  const liveIssueIds = useMemo(
+    () => new Set([...collectLiveIssueIds(liveRuns), ...presenceIssueIds]),
+    [liveRuns, presenceIssueIds],
+  );
   const sortedRoutines = useMemo(
     () => sortRoutines(routines ?? [], routineViewState.sortField, routineViewState.sortDir),
     [routineViewState.sortDir, routineViewState.sortField, routines],
