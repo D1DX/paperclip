@@ -22,6 +22,7 @@ import { cn, agentRouteRef, agentUrl } from "../lib/utils";
 import { useAgentOrder } from "../hooks/useAgentOrder";
 import { AgentIcon } from "./AgentIconPicker";
 import { BudgetSidebarMarker } from "./BudgetSidebarMarker";
+import { LivePill } from "./LivePill";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -87,7 +88,7 @@ function SidebarAgentItem({
       >
         <AgentIcon icon={agent.icon} className="shrink-0 h-3.5 w-3.5 text-muted-foreground" />
         <span className="flex-1 truncate">{agent.name}</span>
-        {(agent.pauseReason === "budget" || runCount > 0) && (
+        {(agent.pauseReason === "budget" || runCount > 0 || agent.isLive) && (
           <span className="ml-auto flex items-center gap-1.5 shrink-0">
             {agent.pauseReason === "budget" ? (
               <BudgetSidebarMarker title="Agent paused by budget" />
@@ -102,6 +103,8 @@ function SidebarAgentItem({
               <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">
                 {runCount} live
               </span>
+            ) : runCount === 0 && agent.isLive ? (
+              <LivePill />
             ) : null}
           </span>
         )}

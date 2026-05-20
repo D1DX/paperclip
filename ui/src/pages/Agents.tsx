@@ -11,6 +11,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "../components/StatusBadge";
 import { agentStatusDot, agentStatusDotDefault } from "../lib/status-colors";
 import { EntityRow } from "../components/EntityRow";
+import { LivePill } from "../components/LivePill";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { relativeTime, cn, agentRouteRef, agentUrl } from "../lib/utils";
@@ -260,6 +261,7 @@ export function Agents() {
                           liveCount={liveRunByAgent.get(agent.id)!.liveCount}
                         />
                       )}
+                      {!liveRunByAgent.has(agent.id) && agent.isLive ? <LivePill /> : null}
                       <span className="w-28 whitespace-nowrap text-left font-mono text-xs text-muted-foreground">
                         {getAdapterLabel(agent.adapterType)}
                       </span>
@@ -367,6 +369,7 @@ function OrgTreeNode({
                 liveCount={liveRunByAgent.get(node.id)!.liveCount}
               />
             )}
+            {!liveRunByAgent.has(node.id) && agent?.isLive ? <LivePill /> : null}
             {agent && (
               <>
                 <span className="w-28 whitespace-nowrap text-left font-mono text-xs text-muted-foreground">
