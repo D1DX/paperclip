@@ -582,6 +582,13 @@
       "when": 1778737666923,
       "tag": "0082_add_issues_due_date",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1779289004862,
+      "tag": "0083_useful_banshee",
+      "breakpoints": true
     }
   ]
 }
