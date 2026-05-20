@@ -22,6 +22,7 @@ export type IssueFilterState = {
   workspaces: string[];
   liveOnly?: boolean;
   hideRoutineExecutions: boolean;
+  hidePendingClient: boolean;
   dueDatePreset?: IssueDueDatePreset | null;
 };
 
@@ -35,6 +36,7 @@ export const defaultIssueFilterState: IssueFilterState = {
   workspaces: [],
   liveOnly: false,
   hideRoutineExecutions: false,
+  hidePendingClient: false,
   dueDatePreset: null,
 };
 
@@ -119,6 +121,7 @@ export function normalizeIssueFilterState(value: unknown): IssueFilterState {
     workspaces: normalizeIssueFilterValueArray(candidate.workspaces),
     liveOnly: candidate.liveOnly === true,
     hideRoutineExecutions: candidate.hideRoutineExecutions === true,
+    hidePendingClient: candidate.hidePendingClient === true,
     dueDatePreset: isIssueDueDatePreset(candidate.dueDatePreset) ? candidate.dueDatePreset : null,
   };
 }
@@ -246,6 +249,7 @@ export function countActiveIssueFilters(
   if (state.workspaces.length > 0) count += 1;
   if (state.liveOnly) count += 1;
   if (enableRoutineVisibilityFilter && state.hideRoutineExecutions) count += 1;
+  if (state.hidePendingClient) count += 1;
   if (state.dueDatePreset) count += 1;
   return count;
 }

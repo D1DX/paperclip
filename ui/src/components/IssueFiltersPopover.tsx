@@ -105,6 +105,10 @@ export function IssueFiltersPopover({
     }),
     [creatorOptionById, currentUserId, state.creators],
   );
+  const hasPendingClientLabel = useMemo(
+    () => (labels ?? []).some((label) => label.name.trim().toLowerCase() === "pending client"),
+    [labels],
+  );
 
   return (
     <Popover>
@@ -384,6 +388,15 @@ export function IssueFiltersPopover({
                       onCheckedChange={(checked) => onChange({ hideRoutineExecutions: checked === true })}
                     />
                     <span className="text-sm">Hide routine runs</span>
+                  </label>
+                ) : null}
+                {hasPendingClientLabel ? (
+                  <label className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
+                    <Checkbox
+                      checked={state.hidePendingClient}
+                      onCheckedChange={(checked) => onChange({ hidePendingClient: checked === true })}
+                    />
+                    <span className="text-sm">Hide pending-client issues</span>
                   </label>
                 ) : null}
               </div>
