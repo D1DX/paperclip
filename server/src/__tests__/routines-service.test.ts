@@ -70,6 +70,7 @@ describeEmbeddedPostgres("routine service live-execution coalescing", () => {
   });
 
   async function seedFixture(opts?: {
+    adapterType?: string;
     wakeup?: (
       agentId: string,
       wakeupOpts: {
@@ -113,7 +114,7 @@ describeEmbeddedPostgres("routine service live-execution coalescing", () => {
       name: "CodexCoder",
       role: "engineer",
       status: "active",
-      adapterType: "codex_local",
+      adapterType: opts?.adapterType ?? "codex_local",
       adapterConfig: {},
       runtimeConfig: {},
       permissions: {},
@@ -593,6 +594,60 @@ describeEmbeddedPostgres("routine service live-execution coalescing", () => {
         executionLockedAt: new Date("2026-03-20T12:01:00.000Z"),
       })
       .where(eq(issues.id, previousIssue.id));
+
+    const detailBefore = await svc.getDetail(routine.id);
+    expect(detailBefore?.activeIssue?.id).toBe(previousIssue.id);
+
+    const run = await svc.runRoutine(routine.id, { source: "manual" });
+    expect(run.status).toBe("coalesced");
+    expect(run.linkedIssueId).toBe(previousIssue.id);
+    expect(run.coalescedIntoRunId).toBe(previousRunId);
+
+    const routineIssues = await db
+      .select({ id: issues.id })
+      .from(issues)
+      .where(eq(issues.originId, routine.id));
+
+    expect(routineIssues).toHaveLength(1);
+    expect(routineIssues[0]?.id).toBe(previousIssue.id);
+  });
+
+  // D1DX fork (D-1383): runless adapters (http, claude_local, human, process) never
+  // have a live heartbeat_run while the issue is open — operator-paced agents ACK and
+  // exit; the issue stays in_progress without any heartbeat liveness. Upstream's
+  // innerJoin-on-heartbeat-runs check excluded these issues from "live", so
+  // coalesce_if_active never fired for them — Codi's daily Email Triage routine
+  // spawned D-1186/D-1270/D-1350 simultaneously open. Fork patches findLiveExecutionIssue
+  // and listLiveIssueByRoutineIds to leftJoin + OR with isRunlessAdapter.
+  it("coalesces an open runless-adapter routine issue with no live heartbeat run (D-1383)", async () => {
+    const { companyId, issueSvc, routine, svc } = await seedFixture({ adapterType: "http" });
+    const previousRunId = randomUUID();
+    const previousIssue = await issueSvc.create(companyId, {
+      projectId: routine.projectId,
+      title: routine.title,
+      description: routine.description,
+      status: "in_progress",
+      priority: routine.priority,
+      assigneeAgentId: routine.assigneeAgentId,
+      originKind: "routine_execution",
+      originId: routine.id,
+      originRunId: previousRunId,
+    });
+
+    await db.insert(routineRuns).values({
+      id: previousRunId,
+      companyId,
+      routineId: routine.id,
+      triggerId: null,
+      source: "manual",
+      status: "issue_created",
+      triggeredAt: new Date("2026-03-20T12:00:00.000Z"),
+      linkedIssueId: previousIssue.id,
+    });
+
+    // No heartbeat_runs row inserted, no executionRunId set on the issue —
+    // mirrors the runless-adapter production state where the agent ACKs an
+    // assignment webhook and the issue progresses operator-paced.
 
     const detailBefore = await svc.getDetail(routine.id);
     expect(detailBefore?.activeIssue?.id).toBe(previousIssue.id);

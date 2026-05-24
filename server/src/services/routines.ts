@@ -42,6 +42,7 @@ import {
   extractRoutineVariableNames,
   interpolateRoutineTemplate,
   pluginOperationIssueOriginKind,
+  RUNLESS_ADAPTER_TYPES,
   stringifyRoutineVariableValue,
   syncRoutineVariablesWithTemplate,
 } from "@paperclipai/shared";
@@ -743,6 +744,14 @@ export function routineService(
 
   async function listLiveIssueByRoutineIds(companyId: string, routineIds: string[]) {
     if (routineIds.length === 0) return new Map<string, RoutineListItem["activeIssue"]>();
+    // D1DX fork (D-1383): leftJoin heartbeatRuns + leftJoin agents, OR liveness
+    // signal with isRunlessAdapter. Runless adapter issues (http/human/process —
+    // and operator-CLI-driven claude_local without runId) have execution_run_id
+    // = NULL by design; the upstream innerJoin excluded them from "live", which
+    // broke coalesce_if_active for routines assigned to runless agents (Codi's
+    // daily Email Triage created D-1186 → D-1270 → D-1350 simultaneously open).
+    // Issue status is the liveness signal for runless adapters.
+    const runlessAdapterTypes = [...RUNLESS_ADAPTER_TYPES];
     const executionBoundRows = await db
       .selectDistinctOn([issues.originId], {
         originId: issues.originId,
@@ -754,13 +763,8 @@ export function routineService(
         updatedAt: issues.updatedAt,
       })
       .from(issues)
-      .innerJoin(
-        heartbeatRuns,
-        and(
-          eq(heartbeatRuns.id, issues.executionRunId),
-          inArray(heartbeatRuns.status, LIVE_HEARTBEAT_RUN_STATUSES),
-        ),
-      )
+      .leftJoin(heartbeatRuns, eq(heartbeatRuns.id, issues.executionRunId))
+      .leftJoin(agents, eq(agents.id, issues.assigneeAgentId))
       .where(
         and(
           eq(issues.companyId, companyId),
@@ -768,6 +772,10 @@ export function routineService(
           inArray(issues.originId, routineIds),
           inArray(issues.status, OPEN_ISSUE_STATUSES),
           isNull(issues.hiddenAt),
+          or(
+            inArray(heartbeatRuns.status, LIVE_HEARTBEAT_RUN_STATUSES),
+            inArray(agents.adapterType, runlessAdapterTypes),
+          ),
         ),
       )
       .orderBy(issues.originId, desc(issues.updatedAt), desc(issues.createdAt));
@@ -791,14 +799,14 @@ export function routineService(
           updatedAt: issues.updatedAt,
         })
         .from(issues)
-        .innerJoin(
+        .leftJoin(
           heartbeatRuns,
           and(
             eq(heartbeatRuns.companyId, issues.companyId),
-            inArray(heartbeatRuns.status, LIVE_HEARTBEAT_RUN_STATUSES),
             sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = cast(${issues.id} as text)`,
           ),
         )
+        .leftJoin(agents, eq(agents.id, issues.assigneeAgentId))
         .where(
           and(
             eq(issues.companyId, companyId),
@@ -806,6 +814,10 @@ export function routineService(
             inArray(issues.originId, missingRoutineIds),
             inArray(issues.status, OPEN_ISSUE_STATUSES),
             isNull(issues.hiddenAt),
+            or(
+              inArray(heartbeatRuns.status, LIVE_HEARTBEAT_RUN_STATUSES),
+              inArray(agents.adapterType, runlessAdapterTypes),
+            ),
           ),
         )
         .orderBy(issues.originId, desc(issues.updatedAt), desc(issues.createdAt));
@@ -880,16 +892,16 @@ export function routineService(
     const fingerprintCondition = routineExecutionFingerprintCondition(dispatchFingerprint);
     const originKind = origin?.kind ?? "routine_execution";
     const originId = origin?.id ?? routine.id;
+    // D1DX fork (D-1383): leftJoin heartbeatRuns + leftJoin agents, OR liveness
+    // signal with isRunlessAdapter. See listLiveIssueByRoutineIds for full
+    // rationale. Same fix shape applied to both query branches below (the
+    // executionRunId-bound path and the legacy contextSnapshot fallback path).
+    const runlessAdapterTypes = [...RUNLESS_ADAPTER_TYPES];
     const executionBoundIssue = await executor
       .select()
       .from(issues)
-      .innerJoin(
-        heartbeatRuns,
-        and(
-          eq(heartbeatRuns.id, issues.executionRunId),
-          inArray(heartbeatRuns.status, LIVE_HEARTBEAT_RUN_STATUSES),
-        ),
-      )
+      .leftJoin(heartbeatRuns, eq(heartbeatRuns.id, issues.executionRunId))
+      .leftJoin(agents, eq(agents.id, issues.assigneeAgentId))
       .where(
         and(
           eq(issues.companyId, routine.companyId),
@@ -898,6 +910,10 @@ export function routineService(
           inArray(issues.status, OPEN_ISSUE_STATUSES),
           isNull(issues.hiddenAt),
           ...(fingerprintCondition ? [fingerprintCondition] : []),
+          or(
+            inArray(heartbeatRuns.status, LIVE_HEARTBEAT_RUN_STATUSES),
+            inArray(agents.adapterType, runlessAdapterTypes),
+          ),
         ),
       )
       .orderBy(desc(issues.updatedAt), desc(issues.createdAt))
@@ -908,14 +924,14 @@ export function routineService(
     return executor
       .select()
       .from(issues)
-      .innerJoin(
+      .leftJoin(
         heartbeatRuns,
         and(
           eq(heartbeatRuns.companyId, issues.companyId),
-          inArray(heartbeatRuns.status, LIVE_HEARTBEAT_RUN_STATUSES),
           sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = cast(${issues.id} as text)`,
         ),
       )
+      .leftJoin(agents, eq(agents.id, issues.assigneeAgentId))
       .where(
         and(
           eq(issues.companyId, routine.companyId),
@@ -924,6 +940,10 @@ export function routineService(
           inArray(issues.status, OPEN_ISSUE_STATUSES),
           isNull(issues.hiddenAt),
           ...(fingerprintCondition ? [fingerprintCondition] : []),
+          or(
+            inArray(heartbeatRuns.status, LIVE_HEARTBEAT_RUN_STATUSES),
+            inArray(agents.adapterType, runlessAdapterTypes),
+          ),
         ),
       )
       .orderBy(desc(issues.updatedAt), desc(issues.createdAt))
