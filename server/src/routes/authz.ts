@@ -13,6 +13,41 @@ export function assertBoard(req: Request) {
   }
 }
 
+/**
+ * Allow either board users OR agents who are the currently-assigned approver
+ * on the issue's active approval stage. Per-issue authorization scoped to the
+ * current stage's participant; not a blanket grant. Closes the RBAC gap where
+ * executionPolicy.approval.participants[].agentId designates an agent as the
+ * approver but the route handler's assertBoard rejected agent tokens.
+ *
+ * D1DX D-1485 (Path E). See platforms/paperclip/CLAUDE.md Gotcha #7.
+ */
+export function assertBoardOrAssignedApprover(
+  req: Request,
+  issue: { executionState?: unknown },
+) {
+  if (req.actor.type === "board") {
+    return;
+  }
+  if (req.actor.type === "agent" && typeof req.actor.agentId === "string") {
+    const state = issue.executionState as
+      | {
+          currentStageType?: string | null;
+          currentParticipant?: { type?: string | null; agentId?: string | null } | null;
+        }
+      | null
+      | undefined;
+    if (
+      state?.currentStageType === "approval" &&
+      state.currentParticipant?.type === "agent" &&
+      state.currentParticipant.agentId === req.actor.agentId
+    ) {
+      return;
+    }
+  }
+  throw forbidden("Board access required");
+}
+
 export function hasBoardOrgAccess(req: Request) {
   if (req.actor.type !== "board") {
     return false;
