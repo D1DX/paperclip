@@ -86,6 +86,7 @@ export interface Config {
   heartbeatSchedulerEnabled: boolean;
   heartbeatSchedulerIntervalMs: number;
   productivityReviewEnabled: boolean;
+  autoPromoteTodoOnResume: boolean;
   companyDeletionEnabled: boolean;
   telemetryEnabled: boolean;
 }
@@ -333,6 +334,7 @@ export function loadConfig(): Config {
     heartbeatSchedulerEnabled: process.env.HEARTBEAT_SCHEDULER_ENABLED !== "false",
     heartbeatSchedulerIntervalMs: Math.max(10000, Number(process.env.HEARTBEAT_SCHEDULER_INTERVAL_MS) || 30000),
     productivityReviewEnabled: process.env.PAPERCLIP_PRODUCTIVITY_REVIEW_ENABLED !== "false",
+    autoPromoteTodoOnResume: process.env.PAPERCLIP_AUTOPROMOTE_TODO_ON_RESUME !== "false",
     companyDeletionEnabled,
     telemetryEnabled: fileConfig?.telemetry?.enabled ?? true,
   };

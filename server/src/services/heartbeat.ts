@@ -2275,9 +2275,15 @@ export type HeartbeatEnvironmentRuntime = ReturnType<typeof environmentRuntimeSe
 export interface HeartbeatServiceOptions {
   pluginWorkerManager?: PluginWorkerManager;
   environmentRuntime?: HeartbeatEnvironmentRuntime;
+  // D-1614: when false, the auto-checkout-on-wake path (heartbeat.ts ~6749)
+  // skips `issuesSvc.checkout` when a prior `[session-start]` comment from
+  // the same agent exists on the issue (resume scenario). Default true
+  // preserves upstream behavior; D1DX Coolify sets PAPERCLIP_AUTOPROMOTE_TODO_ON_RESUME=false.
+  autoPromoteTodoOnResume?: boolean;
 }
 
 export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) {
+  const autoPromoteTodoOnResume = options.autoPromoteTodoOnResume ?? true;
   const instanceSettings = instanceSettingsService(db);
   const getCurrentUserRedactionOptions = async () => ({
     enabled: (await instanceSettings.getGeneral()).censorUsernameInLogs,
@@ -6745,12 +6751,35 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         agentId: agent.id,
       })
     ) {
-      try {
-        await issuesSvc.checkout(issueId, agent.id, ["todo", "backlog", "blocked"], run.id);
-        context[PAPERCLIP_HARNESS_CHECKOUT_KEY] = true;
-      } catch (error) {
-        if (!isCheckoutConflictError(error)) throw error;
+      // D-1614: when autoPromoteTodoOnResume=false, skip auto-checkout on RESUME wakes
+      // (prior [session-start] from same agent exists). Cold wakes still flip as today.
+      let skipAutoCheckoutOnResume = false;
+      if (!autoPromoteTodoOnResume) {
+        const priorSessionStart = await db
+          .select({ id: issueComments.id })
+          .from(issueComments)
+          .where(
+            and(
+              eq(issueComments.companyId, agent.companyId),
+              eq(issueComments.issueId, issueId),
+              eq(issueComments.authorAgentId, agent.id),
+              sql`${issueComments.body} like '[session-start]%'`,
+            ),
+          )
+          .limit(1)
+          .then((rows) => rows[0] ?? null);
+        skipAutoCheckoutOnResume = priorSessionStart != null;
+      }
+      if (skipAutoCheckoutOnResume) {
         context[PAPERCLIP_HARNESS_CHECKOUT_KEY] = false;
+      } else {
+        try {
+          await issuesSvc.checkout(issueId, agent.id, ["todo", "backlog", "blocked"], run.id);
+          context[PAPERCLIP_HARNESS_CHECKOUT_KEY] = true;
+        } catch (error) {
+          if (!isCheckoutConflictError(error)) throw error;
+          context[PAPERCLIP_HARNESS_CHECKOUT_KEY] = false;
+        }
       }
       issueContext = await getIssueExecutionContext(agent.companyId, issueId);
     }
