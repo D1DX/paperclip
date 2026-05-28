@@ -3,7 +3,7 @@ import path from "node:path";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, getTableColumns, gt, inArray, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, inArray, isNull, like, lt, lte, notInArray, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
@@ -6763,12 +6763,24 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
               eq(issueComments.companyId, agent.companyId),
               eq(issueComments.issueId, issueId),
               eq(issueComments.authorAgentId, agent.id),
-              sql`${issueComments.body} like '[session-start]%'`,
+              like(issueComments.body, "[session-start]%"),
             ),
           )
           .limit(1)
           .then((rows) => rows[0] ?? null);
         skipAutoCheckoutOnResume = priorSessionStart != null;
+        // D-1614 debug log — remove after gate confirmed working in production.
+        logger.info(
+          {
+            issueId,
+            agentId: agent.id,
+            wakeReason: readNonEmptyString(context.wakeReason),
+            autoPromoteTodoOnResume,
+            priorSessionStartFound: priorSessionStart != null,
+            skipAutoCheckoutOnResume,
+          },
+          "D-1614 gate evaluated",
+        );
       }
       if (skipAutoCheckoutOnResume) {
         context[PAPERCLIP_HARNESS_CHECKOUT_KEY] = false;
