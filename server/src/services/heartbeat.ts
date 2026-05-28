@@ -2283,7 +2283,12 @@ export interface HeartbeatServiceOptions {
 }
 
 export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) {
-  const autoPromoteTodoOnResume = options.autoPromoteTodoOnResume ?? true;
+  // D-1614: option fallback to env so every factory call site picks up the gate,
+  // not just the one in startServer() that explicitly threads config.
+  // process.env defaults to "true" (upstream behaviour) when the env var is missing
+  // or anything other than "false"; D1DX Coolify sets PAPERCLIP_AUTOPROMOTE_TODO_ON_RESUME=false.
+  const autoPromoteTodoOnResume = options.autoPromoteTodoOnResume
+    ?? (process.env.PAPERCLIP_AUTOPROMOTE_TODO_ON_RESUME !== "false");
   const instanceSettings = instanceSettingsService(db);
   const getCurrentUserRedactionOptions = async () => ({
     enabled: (await instanceSettings.getGeneral()).censorUsernameInLogs,
