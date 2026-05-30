@@ -1636,7 +1636,7 @@ function describeSessionResetReason(
   return null;
 }
 
-function shouldAutoCheckoutIssueForWake(input: {
+export function shouldAutoCheckoutIssueForWake(input: {
   contextSnapshot: Record<string, unknown> | null | undefined;
   issueStatus: string | null;
   issueAssigneeAgentId: string | null;
@@ -1662,6 +1662,38 @@ function shouldAutoCheckoutIssueForWake(input: {
   if (wakeReason.startsWith("execution_")) return false;
 
   return true;
+}
+
+// D-1614: decide whether the auto-checkout-on-wake path should be skipped because
+// this is a RESUME wake — a prior `[session-start]` comment from the same agent
+// already exists on the issue. When autoPromoteTodoOnResume is true (upstream
+// default), never skip. Extracted from executeRun's inline gate (heartbeat.ts
+// ~6759) so the decision is unit-testable (D-1619).
+export async function resolveResumeAutoCheckoutSkip(input: {
+  db: Db;
+  companyId: string;
+  issueId: string;
+  agentId: string;
+  autoPromoteTodoOnResume: boolean;
+}): Promise<{ skip: boolean; priorSessionStartFound: boolean }> {
+  if (input.autoPromoteTodoOnResume) {
+    return { skip: false, priorSessionStartFound: false };
+  }
+  const priorSessionStart = await input.db
+    .select({ id: issueComments.id })
+    .from(issueComments)
+    .where(
+      and(
+        eq(issueComments.companyId, input.companyId),
+        eq(issueComments.issueId, input.issueId),
+        eq(issueComments.authorAgentId, input.agentId),
+        like(issueComments.body, "[session-start]%"),
+      ),
+    )
+    .limit(1)
+    .then((rows) => rows[0] ?? null);
+  const priorSessionStartFound = priorSessionStart != null;
+  return { skip: priorSessionStartFound, priorSessionStartFound };
 }
 
 function shouldQueueFollowupForRunningIssueWake(input: {
@@ -6758,22 +6790,16 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     ) {
       // D-1614: when autoPromoteTodoOnResume=false, skip auto-checkout on RESUME wakes
       // (prior [session-start] from same agent exists). Cold wakes still flip as today.
-      let skipAutoCheckoutOnResume = false;
+      // Decision extracted to resolveResumeAutoCheckoutSkip for unit coverage (D-1619).
+      const { skip: skipAutoCheckoutOnResume, priorSessionStartFound } =
+        await resolveResumeAutoCheckoutSkip({
+          db,
+          companyId: agent.companyId,
+          issueId,
+          agentId: agent.id,
+          autoPromoteTodoOnResume,
+        });
       if (!autoPromoteTodoOnResume) {
-        const priorSessionStart = await db
-          .select({ id: issueComments.id })
-          .from(issueComments)
-          .where(
-            and(
-              eq(issueComments.companyId, agent.companyId),
-              eq(issueComments.issueId, issueId),
-              eq(issueComments.authorAgentId, agent.id),
-              like(issueComments.body, "[session-start]%"),
-            ),
-          )
-          .limit(1)
-          .then((rows) => rows[0] ?? null);
-        skipAutoCheckoutOnResume = priorSessionStart != null;
         // D-1614 debug log — remove after gate confirmed working in production.
         logger.info(
           {
@@ -6781,7 +6807,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
             agentId: agent.id,
             wakeReason: readNonEmptyString(context.wakeReason),
             autoPromoteTodoOnResume,
-            priorSessionStartFound: priorSessionStart != null,
+            priorSessionStartFound,
             skipAutoCheckoutOnResume,
           },
           "D-1614 gate evaluated",
