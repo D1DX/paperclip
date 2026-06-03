@@ -343,8 +343,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       ? null
       : await prepareManagedCodexHome(process.env, onLog, agent.companyId, {
           apiKey: configuredOpenAiApiKey,
+          // D-1767 (S4): pass agentId so each agent gets its own isolated
+          // Codex home (and auth.json) by construction.
+          agentId: agent.id,
         });
-  const defaultCodexHome = resolveManagedCodexHomeDir(process.env, agent.companyId);
+  // D-1767 (S4): default home is now keyed on agentId as well.
+  const defaultCodexHome = resolveManagedCodexHomeDir(process.env, agent.companyId, agent.id);
   const effectiveCodexHome = configuredCodexHome ?? preparedManagedCodexHome ?? defaultCodexHome;
   await fs.mkdir(effectiveCodexHome, { recursive: true });
   // Inject skills into the same CODEX_HOME that Codex will actually run with
