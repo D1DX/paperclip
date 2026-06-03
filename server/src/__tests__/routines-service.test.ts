@@ -1394,4 +1394,67 @@ describeEmbeddedPostgres("routine service live-execution coalescing", () => {
     expect(run.source).toBe("webhook");
     expect(run.status).toBe("issue_created");
   });
+
+  it("D-1767: reconcile re-seeds a NULL next_run_at on a live schedule trigger", async () => {
+    const { routine, svc } = await seedFixture();
+    const { trigger } = await svc.createTrigger(
+      routine.id,
+      { kind: "schedule", label: "daily", cronExpression: "0 9 * * *", timezone: "Asia/Bangkok" },
+      {},
+    );
+    // Simulate the freeze: a live, enabled schedule trigger with NULL next_run_at.
+    await db.update(routineTriggers).set({ nextRunAt: null }).where(eq(routineTriggers.id, trigger.id));
+
+    const result = await svc.reconcileScheduleTriggerNextRun(new Date("2026-03-20T00:00:00.000Z"));
+    expect(result.reseeded).toBe(1);
+    expect(result.stuck).toBe(0);
+
+    const after = await db
+      .select()
+      .from(routineTriggers)
+      .where(eq(routineTriggers.id, trigger.id))
+      .then((rows) => rows[0]);
+    expect(after?.nextRunAt).not.toBeNull();
+  });
+
+  it("D-1767: reconcile leaves NULL next_run_at on a paused routine (only heals live ones)", async () => {
+    const { routine, svc } = await seedFixture();
+    const { trigger } = await svc.createTrigger(
+      routine.id,
+      { kind: "schedule", label: "daily", cronExpression: "0 9 * * *", timezone: "Asia/Bangkok" },
+      {},
+    );
+    await db.update(routineTriggers).set({ nextRunAt: null }).where(eq(routineTriggers.id, trigger.id));
+    await svc.update(routine.id, { status: "paused" }, {});
+
+    const result = await svc.reconcileScheduleTriggerNextRun(new Date("2026-03-20T00:00:00.000Z"));
+    expect(result.reseeded).toBe(0);
+
+    const after = await db
+      .select()
+      .from(routineTriggers)
+      .where(eq(routineTriggers.id, trigger.id))
+      .then((rows) => rows[0]);
+    expect(after?.nextRunAt).toBeNull();
+  });
+
+  it("D-1767: activating a routine re-seeds a frozen schedule trigger immediately", async () => {
+    const { routine, svc } = await seedFixture();
+    const { trigger } = await svc.createTrigger(
+      routine.id,
+      { kind: "schedule", label: "daily", cronExpression: "0 9 * * *", timezone: "Asia/Bangkok" },
+      {},
+    );
+    await svc.update(routine.id, { status: "paused" }, {});
+    await db.update(routineTriggers).set({ nextRunAt: null }).where(eq(routineTriggers.id, trigger.id));
+
+    await svc.update(routine.id, { status: "active" }, {});
+
+    const after = await db
+      .select()
+      .from(routineTriggers)
+      .where(eq(routineTriggers.id, trigger.id))
+      .then((rows) => rows[0]);
+    expect(after?.nextRunAt).not.toBeNull();
+  });
 });

@@ -1643,6 +1643,41 @@ export function routineService(
           .where(eq(routines.id, id))
           .returning();
         if (!updated) return null;
+
+        // D-1767: re-seed on activation. The routine-update path doesn't touch
+        // triggers, so a routine flipped active while an enabled schedule trigger
+        // still carries next_run_at = NULL stays frozen (the due-query needs a
+        // non-NULL next_run_at). On the active transition, re-seed any such
+        // trigger immediately rather than waiting for the reconcile cycle.
+        if (candidate.status === "active" && locked.status !== "active") {
+          const frozen = await txDb
+            .select()
+            .from(routineTriggers)
+            .where(
+              and(
+                eq(routineTriggers.routineId, id),
+                eq(routineTriggers.kind, "schedule"),
+                eq(routineTriggers.enabled, true),
+                isNull(routineTriggers.nextRunAt),
+              ),
+            );
+          const activatedAt = new Date();
+          for (const trig of frozen) {
+            if (!trig.cronExpression || !trig.timezone) continue;
+            let next: Date | null = null;
+            try {
+              next = nextCronTickInTimeZone(trig.cronExpression, trig.timezone, activatedAt);
+            } catch {
+              continue;
+            }
+            if (!next) continue;
+            await txDb
+              .update(routineTriggers)
+              .set({ nextRunAt: next, updatedAt: activatedAt })
+              .where(and(eq(routineTriggers.id, trig.id), isNull(routineTriggers.nextRunAt)));
+          }
+        }
+
         const { routine } = await appendRoutineRevision(txDb, updated, actor, {
           changeSummary: "Updated routine",
         });
@@ -1984,6 +2019,18 @@ export function routineService(
             && triggerSnapshot.cronExpression && triggerSnapshot.timezone
             ? nextCronTickInTimeZone(triggerSnapshot.cronExpression, triggerSnapshot.timezone, now)
             : null;
+          // D-1767: a revision-restore is the most likely origin of an enabled
+          // schedule trigger with NULL next_run_at (last_fired_at also resets on
+          // the delete+insert). Log it; the reconcile pass heals it next cycle.
+          if (
+            triggerSnapshot.kind === "schedule" && triggerSnapshot.enabled
+            && restoredNextRunAt === null && routineSnapshot.status === "active"
+          ) {
+            logger.warn(
+              { routineId: locked.id, triggerId: triggerSnapshot.id },
+              "D-1767: revision-restore left a live schedule trigger with NULL next_run_at (no future cron tick or missing cron/tz) — reconcile will retry",
+            );
+          }
           const baseValues = {
             companyId: locked.companyId,
             routineId: locked.id,
@@ -2251,6 +2298,17 @@ export function routineService(
           }
         }
 
+        // D-1767: a null claim freezes the trigger (next_run_at = NULL can never
+        // re-match the due-query). It's written when nextCronTickInTimeZone finds
+        // no future tick. Log it so the silent-freeze class is visible; the
+        // reconcileScheduleTriggerNextRun pass will attempt a re-seed next cycle.
+        if (!claimedNextRunAt) {
+          logger.warn(
+            { routineId: row.routine.id, triggerId: row.trigger.id },
+            "D-1767: scheduler tick computed no future cron tick — next_run_at will be NULL (frozen until reconcile)",
+          );
+        }
+
         const claimed = await db
           .update(routineTriggers)
           .set({
@@ -2279,6 +2337,81 @@ export function routineService(
       }
 
       return { triggered };
+    },
+
+    // D-1767: self-heal reconcile for the silent scheduler-freeze class.
+    // A live (enabled + active) schedule trigger whose next_run_at is NULL can
+    // never match tickScheduledTriggers' due-query (it requires next_run_at IS
+    // NOT NULL), so it is frozen forever with no error. NULL can be written by
+    // any seed path when nextCronTickInTimeZone returns null (line ~155), by a
+    // revision-restore that carried a disabled-trigger snapshot, or by the tick
+    // claim below. Nothing reconciled it back — which is why the 2026-06 outage
+    // went ~10 days unnoticed. This re-seeds NULL next_run_at on live schedule
+    // triggers from the canonical cron math and logs every heal for forensics.
+    reconcileScheduleTriggerNextRun: async (now: Date = new Date()) => {
+      const candidates = await db
+        .select({ trigger: routineTriggers, routine: routines })
+        .from(routineTriggers)
+        .innerJoin(routines, eq(routineTriggers.routineId, routines.id))
+        .where(
+          and(
+            eq(routineTriggers.kind, "schedule"),
+            eq(routineTriggers.enabled, true),
+            eq(routines.status, "active"),
+            isNull(routineTriggers.nextRunAt),
+          ),
+        );
+
+      let reseeded = 0;
+      let stuck = 0;
+      for (const row of candidates) {
+        const { cronExpression, timezone } = row.trigger;
+        if (!cronExpression || !timezone) {
+          stuck += 1;
+          logger.warn(
+            { routineId: row.routine.id, triggerId: row.trigger.id },
+            "D-1767 reconcile: live schedule trigger missing cron/timezone — cannot reseed NULL next_run_at",
+          );
+          continue;
+        }
+
+        let next: Date | null = null;
+        try {
+          next = nextCronTickInTimeZone(cronExpression, timezone, now);
+        } catch (err) {
+          stuck += 1;
+          logger.warn(
+            { err, routineId: row.routine.id, triggerId: row.trigger.id },
+            "D-1767 reconcile: invalid cron on live schedule trigger — cannot reseed NULL next_run_at",
+          );
+          continue;
+        }
+        if (!next) {
+          stuck += 1;
+          logger.warn(
+            { routineId: row.routine.id, triggerId: row.trigger.id, cronExpression, timezone },
+            "D-1767 reconcile: live schedule trigger has no future cron tick — leaving NULL next_run_at",
+          );
+          continue;
+        }
+
+        // Re-seed only if still NULL (avoid racing a concurrent tick/update).
+        const healed = await db
+          .update(routineTriggers)
+          .set({ nextRunAt: next, updatedAt: new Date() })
+          .where(and(eq(routineTriggers.id, row.trigger.id), isNull(routineTriggers.nextRunAt)))
+          .returning({ id: routineTriggers.id })
+          .then((rows) => rows[0] ?? null);
+        if (healed) {
+          reseeded += 1;
+          logger.warn(
+            { routineId: row.routine.id, triggerId: row.trigger.id, nextRunAt: next.toISOString() },
+            "D-1767 reconcile: re-seeded NULL next_run_at on a live schedule trigger (was frozen)",
+          );
+        }
+      }
+
+      return { reseeded, stuck };
     },
 
     syncRunStatusForIssue: async (issueId: string) => {

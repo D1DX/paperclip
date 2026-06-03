@@ -742,7 +742,21 @@ export async function startServer(): Promise<StartedServer> {
         .catch((err) => {
           logger.error({ err }, "routine scheduler tick failed");
         });
-  
+
+      // D-1767: self-heal the silent scheduler-freeze class. A live (enabled +
+      // active) schedule trigger left with next_run_at = NULL is frozen forever
+      // and emits no error — re-seed it from the canonical cron math each cycle.
+      void routines
+        .reconcileScheduleTriggerNextRun(new Date())
+        .then((result) => {
+          if (result.reseeded > 0 || result.stuck > 0) {
+            logger.warn({ ...result }, "D-1767 routine scheduler reconcile healed frozen triggers");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "routine scheduler reconcile failed");
+        });
+
       // Periodically reap orphaned runs (5-min staleness threshold) and make sure
       // persisted queued work is still being driven forward.
       void heartbeat
