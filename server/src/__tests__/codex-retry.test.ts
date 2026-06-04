@@ -28,6 +28,12 @@ describe("isCodexTransient401 (D-1853)", () => {
     ).toBe(false);
   });
 
+  it("flags a 401 even when exitCode is null (no clean exit code)", () => {
+    expect(
+      isCodexTransient401({ exitCode: null, errorMessage: "401 Unauthorized: Missing bearer" }),
+    ).toBe(true);
+  });
+
   it("does NOT flag a non-401 hard failure", () => {
     expect(isCodexTransient401({ exitCode: 1, errorMessage: "ENOENT: codex binary not found" })).toBe(false);
   });

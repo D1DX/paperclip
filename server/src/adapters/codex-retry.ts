@@ -13,7 +13,7 @@ export const CODEX_TRANSIENT_401 = /\b401\b|missing bearer or basic authenticati
 
 /** Minimal structural shape of a codex execute result (fields used by the detector). */
 export interface CodexExecuteResultLike {
-  exitCode: number;
+  exitCode: number | null;
   errorFamily?: string | null;
   errorMessage?: string | null;
   resultJson?: unknown;
