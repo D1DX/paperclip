@@ -39,6 +39,7 @@ import {
   sessionCodec as codexSessionCodec,
   getQuotaWindows as codexGetQuotaWindows,
 } from "@paperclipai/adapter-codex-local/server";
+import { isCodexTransient401, codexRetryBackoffMs, CODEX_MAX_ATTEMPTS } from "./codex-retry.js";
 import {
   agentConfigurationDoc as codexAgentConfigurationDoc,
   models as codexModels,
@@ -264,9 +265,31 @@ const acpxLocalAdapter: ServerAdapterModule = {
   getConfigSchema: getAcpxConfigSchema,
 };
 
+// D-1853: bounded inline retry for a transient 401 "Missing bearer or basic
+// authentication" on the codex Responses-API call. This happens when codex spawns
+// in a window with no auth attached — e.g. a Paperclip redeploy landing mid-run —
+// and the auth is otherwise healthy. The upstream adapter classifies KNOWN transient
+// errors as `transient_upstream` (the scheduler retries those via `retryNotBefore`);
+// the missing-bearer 401 is NOT in that taxonomy, so it lands as a hard adapter
+// failure and strands the agent in status:error (D-1853: 5 issues stranded in_review
+// on Lidi). Retry only this signature, bounded, so a genuine auth death still
+// surfaces after the attempts (a few retries cannot fix a truly revoked credential).
+// D-1853: retry a transient missing-bearer 401 (e.g. codex spawned during a
+// Paperclip redeploy with no auth attached) before surfacing a hard failure that
+// would strand the agent in status:error. Detector + bounds in ./codex-retry.ts.
+const codexExecuteWithRetry: ServerAdapterModule["execute"] = async (ctx) => {
+  let result = await codexExecute(ctx);
+  for (let attempt = 1; attempt < CODEX_MAX_ATTEMPTS; attempt += 1) {
+    if (!isCodexTransient401(result)) break;
+    await new Promise((resolve) => setTimeout(resolve, codexRetryBackoffMs(attempt)));
+    result = await codexExecute(ctx);
+  }
+  return result;
+};
+
 const codexLocalAdapter: ServerAdapterModule = {
   type: "codex_local",
-  execute: codexExecute,
+  execute: codexExecuteWithRetry,
   testEnvironment: codexTestEnvironment,
   listSkills: listCodexSkills,
   syncSkills: syncCodexSkills,
