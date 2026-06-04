@@ -683,6 +683,17 @@ export async function startServer(): Promise<StartedServer> {
       .then(() => heartbeat.promoteDueScheduledRetries())
       .then(async (promotion) => {
         await heartbeat.resumeQueuedRuns();
+        // D-1837: stranded-issue-recovery (the "Recover stalled issue <D-N>"
+        // auto-spawner) is env-gated; default-on preserves upstream behavior.
+        if (!config.strandedRecoveryEnabled) {
+          if (promotion.promoted > 0) {
+            logger.warn(
+              { promotedScheduledRetries: promotion.promoted, promotedScheduledRetryRunIds: promotion.runIds },
+              "startup scheduled-retry promotion (stranded recovery disabled)",
+            );
+          }
+          return;
+        }
         const reconciled = await heartbeat.reconcileStrandedAssignedIssues();
         if (
           promotion.promoted > 0 ||
@@ -764,6 +775,16 @@ export async function startServer(): Promise<StartedServer> {
         .then(() => heartbeat.promoteDueScheduledRetries())
         .then(async (promotion) => {
           await heartbeat.resumeQueuedRuns();
+          // D-1837: stranded-issue-recovery env-gate (see startup chain above).
+          if (!config.strandedRecoveryEnabled) {
+            if (promotion.promoted > 0) {
+              logger.warn(
+                { promotedScheduledRetries: promotion.promoted, promotedScheduledRetryRunIds: promotion.runIds },
+                "periodic scheduled-retry promotion (stranded recovery disabled)",
+              );
+            }
+            return;
+          }
           const reconciled = await heartbeat.reconcileStrandedAssignedIssues();
           if (
             promotion.promoted > 0 ||
