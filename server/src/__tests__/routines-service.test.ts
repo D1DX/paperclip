@@ -1457,4 +1457,79 @@ describeEmbeddedPostgres("routine service live-execution coalescing", () => {
       .then((rows) => rows[0]);
     expect(after?.nextRunAt).not.toBeNull();
   });
+
+  it("D-1767 S3: reaps a routine_run wedged in 'received' past the threshold", async () => {
+    const { companyId, routine, svc } = await seedFixture();
+    const stuckId = randomUUID();
+    await db.insert(routineRuns).values({
+      id: stuckId,
+      companyId,
+      routineId: routine.id,
+      triggerId: null,
+      source: "schedule",
+      status: "received",
+      triggeredAt: new Date("2026-05-28T05:00:00.000Z"),
+      createdAt: new Date("2026-05-28T05:00:00.000Z"),
+    });
+
+    const result = await svc.reapStaleRoutineRuns({ staleThresholdMs: 60 * 60 * 1000 });
+    expect(result.reaped).toBe(1);
+
+    const row = await db
+      .select()
+      .from(routineRuns)
+      .where(eq(routineRuns.id, stuckId))
+      .then((r) => r[0]);
+    expect(row?.status).toBe("failed");
+    expect(row?.failureReason).toMatch(/Reaped/);
+    expect(row?.completedAt).not.toBeNull();
+  });
+
+  it("D-1767 S3: does NOT reap a recent 'received' run (within threshold)", async () => {
+    const { companyId, routine, svc } = await seedFixture();
+    const freshId = randomUUID();
+    await db.insert(routineRuns).values({
+      id: freshId,
+      companyId,
+      routineId: routine.id,
+      triggerId: null,
+      source: "schedule",
+      status: "received",
+      triggeredAt: new Date(),
+      createdAt: new Date(),
+    });
+
+    const result = await svc.reapStaleRoutineRuns({ staleThresholdMs: 60 * 60 * 1000 });
+    expect(result.reaped).toBe(0);
+    const row = await db
+      .select()
+      .from(routineRuns)
+      .where(eq(routineRuns.id, freshId))
+      .then((r) => r[0]);
+    expect(row?.status).toBe("received");
+  });
+
+  it("D-1767 S3: does NOT reap a resting 'issue_created' run even when old", async () => {
+    const { companyId, routine, svc } = await seedFixture();
+    const restingId = randomUUID();
+    await db.insert(routineRuns).values({
+      id: restingId,
+      companyId,
+      routineId: routine.id,
+      triggerId: null,
+      source: "schedule",
+      status: "issue_created",
+      triggeredAt: new Date("2026-05-28T05:00:00.000Z"),
+      createdAt: new Date("2026-05-28T05:00:00.000Z"),
+    });
+
+    const result = await svc.reapStaleRoutineRuns({ staleThresholdMs: 60 * 60 * 1000 });
+    expect(result.reaped).toBe(0);
+    const row = await db
+      .select()
+      .from(routineRuns)
+      .where(eq(routineRuns.id, restingId))
+      .then((r) => r[0]);
+    expect(row?.status).toBe("issue_created");
+  });
 });

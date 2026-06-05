@@ -768,6 +768,20 @@ export async function startServer(): Promise<StartedServer> {
           logger.error({ err }, "routine scheduler reconcile failed");
         });
 
+      // D-1767 (S3): reap routine_runs wedged in a non-terminal status past 1h
+      // (e.g. the 'received' row stuck since 2026-05-28 in the D-1738 outage) —
+      // a silent class with no error/completion that nothing else finalizes.
+      void routines
+        .reapStaleRoutineRuns({ staleThresholdMs: 60 * 60 * 1000 })
+        .then((result) => {
+          if (result.reaped > 0) {
+            logger.warn({ ...result }, "D-1767 S3 reaped stale routine_runs");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "routine-run reaper failed");
+        });
+
       // Periodically reap orphaned runs (5-min staleness threshold) and make sure
       // persisted queued work is still being driven forward.
       void heartbeat

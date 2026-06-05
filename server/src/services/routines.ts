@@ -2414,6 +2414,65 @@ export function routineService(
       return { reseeded, stuck };
     },
 
+    // D-1767 (S3): reap routine_runs wedged in a non-terminal status past a
+    // staleness threshold. A run that never reaches a terminal state (e.g. the
+    // 'received' row stuck since 2026-05-28 in the D-1738 outage) is invisible —
+    // no error, no completion — and nothing else finalizes it. Mirror
+    // reapOrphanedRuns (heartbeat_runs): finalize each as 'failed' with a reason
+    // so the row stops masquerading as live work, and log every reap.
+    reapStaleRoutineRuns: async (
+      opts?: { staleThresholdMs?: number },
+      now: Date = new Date(),
+    ) => {
+      const staleThresholdMs = opts?.staleThresholdMs ?? 60 * 60 * 1000;
+      const cutoff = new Date(now.getTime() - staleThresholdMs);
+      // "received" is the ONLY transient routine_run status — a run is created
+      // as "received" (line ~1166) and then settles into a resting outcome
+      // (issue_created / coalesced / skipped / completed / failed). A run still
+      // "received" past the threshold is wedged (dispatch crashed mid-flight,
+      // e.g. the D-1738 row stuck since 2026-05-28). Reaping ONLY "received" is
+      // safe — it can never touch a legitimately-resting run.
+      const stale = await db
+        .select({
+          id: routineRuns.id,
+          routineId: routineRuns.routineId,
+          status: routineRuns.status,
+          createdAt: routineRuns.createdAt,
+        })
+        .from(routineRuns)
+        .where(
+          and(
+            eq(routineRuns.status, "received"),
+            lte(routineRuns.createdAt, cutoff),
+          ),
+        );
+
+      let reaped = 0;
+      for (const row of stale) {
+        const finalized = await finalizeRun(row.id, {
+          status: "failed",
+          failureReason: `Reaped: stuck in '${row.status}' > ${Math.round(
+            staleThresholdMs / 60000,
+          )}m without reaching a terminal state (D-1767 S3 reaper).`,
+          completedAt: now,
+        });
+        if (finalized) {
+          reaped += 1;
+          logger.warn(
+            {
+              routineRunId: row.id,
+              routineId: row.routineId,
+              priorStatus: row.status,
+              ageMs: now.getTime() - row.createdAt.getTime(),
+            },
+            "D-1767 S3: reaped a routine_run wedged in a non-terminal status",
+          );
+        }
+      }
+
+      return { reaped };
+    },
+
     syncRunStatusForIssue: async (issueId: string) => {
       const issue = await db
         .select({
