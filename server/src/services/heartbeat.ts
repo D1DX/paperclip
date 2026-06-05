@@ -1047,6 +1047,7 @@ export function resolveModelProfileApplication(input: {
   issueModelProfile: ModelProfileKey | null | undefined;
   contextSnapshot: Record<string, unknown> | null | undefined;
   profileResolutionFallbackReason?: string | null;
+  adapterType?: string | null;
 }): ModelProfileApplication {
   const issueModelProfile = input.issueModelProfile ?? null;
   const contextModelProfile = readContextModelProfile(input.contextSnapshot);
@@ -1088,6 +1089,32 @@ export function resolveModelProfileApplication(input: {
       applied: null,
       configSource: null,
       fallbackReason: "agent_runtime_profile_disabled",
+      adapterConfig: null,
+    };
+  }
+
+  // D-1839: recovery/handoff wakes stamp modelProfile:"cheap" generically
+  // (recovery/model-profile-hint.ts → carried as wake_context). For a
+  // codex_local agent authenticated against a ChatGPT account, the
+  // adapter-default "cheap" lane pins gpt-5.3-codex-spark, which the Codex CLI
+  // rejects ("not supported when using Codex with a ChatGPT account") →
+  // adapter_failed → the source issue is force-blocked and a "Recover stalled
+  // issue" sub-issue is spawned. When the cheap profile arrives via a recovery
+  // wake (not an explicit issue override) and resolves only to the adapter
+  // default (no agent-configured override), skip it so the corrective retry
+  // inherits the agent's own configured model (e.g. gpt-5.5) instead. Explicit
+  // issue_override / agent_runtime cheap selections are intentionally preserved.
+  if (
+    input.adapterType === "codex_local" &&
+    requestedBy === "wake_context" &&
+    !runtimeProfile.configured
+  ) {
+    return {
+      requested,
+      requestedBy,
+      applied: null,
+      configSource: null,
+      fallbackReason: "recovery_profile_inherits_agent_model",
       adapterConfig: null,
     };
   }
@@ -7052,6 +7079,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       issueModelProfile: issueAssigneeOverrides?.modelProfile ?? null,
       contextSnapshot: context,
       profileResolutionFallbackReason,
+      adapterType: agent.adapterType,
     });
     const modelProfileMetadata = modelProfileRunMetadata(modelProfileApplication);
     if (modelProfileMetadata) {
