@@ -70,21 +70,6 @@ export function resolveManagedCodexHomeDir(
     : path.resolve(paperclipHome, "instances", instanceId, "codex-home");
 }
 
-/**
- * Returns the legacy company-level managed Codex home directory.
- * Used internally as the seed source for a newly-created per-agent home so
- * that already-authed agents (e.g. Lidi) keep working on first upgrade without
- * re-authentication.  Never mutates or deletes this path.
- */
-export function resolveLegacyCompanyCodexHomeDir(
-  env: NodeJS.ProcessEnv,
-  companyId: string,
-): string {
-  const paperclipHome = nonEmpty(env.PAPERCLIP_HOME) ?? path.resolve(os.homedir(), ".paperclip");
-  const instanceId = nonEmpty(env.PAPERCLIP_INSTANCE_ID) ?? DEFAULT_PAPERCLIP_INSTANCE_ID;
-  return path.resolve(paperclipHome, "instances", instanceId, "companies", companyId, "codex-home");
-}
-
 async function ensureParentDir(target: string): Promise<void> {
   await fs.mkdir(path.dirname(target), { recursive: true });
 }
@@ -119,80 +104,35 @@ async function ensureCopiedFile(target: string, source: string): Promise<void> {
 }
 
 /**
- * D-1767 (S4): If the per-agent target home does not yet have auth.json, seed
- * it from the first of the candidate sources that exists (copy -- never move or
- * delete the source).  Sources tried in order:
- *   1. The legacy company-level managed Codex home (the old shared path before
- *      S4; Lidi lives here -- copying keeps Lidi authed on first upgrade).
- *   2. The process-level shared Codex home (resolveSharedCodexHomeDir).
+ * D-1861 (S-2): A managed per-agent Codex home with no auth.json means the
+ * agent has never been provisioned. Emit ONE loud, structured diagnostic so
+ * the failure is visible at the source instead of surfacing later as an opaque
+ * "401 Missing bearer" that looks like an expired token. The fleet probe
+ * Check-C catches the same class from the outside.
  *
- * Cutover safety properties:
- * - Copy-from, never move-from: sources are left intact.
- * - Only copies if target auth.json is absent: won't clobber an existing one.
- * - Non-blocking: failure is logged, not thrown (auth will simply be absent and
- *   Codex will prompt the user, the same behaviour as before S4).
+ * D-1861 (S-1): we deliberately do NOT seed auth.json from any shared/other
+ * home. The seed-from-shared crutch (the old PAPERCLIP_CODEX_SEED_SHARED_AGENT_IDS
+ * allowlist) is retired — every codex_local agent owns its own auth.json (own
+ * device-auth or own OPENAI_API_KEY), isolated by construction. Copying another
+ * home's live token is exactly the refresh-token burn this whole design exists
+ * to prevent.
  */
-async function seedPerAgentAuthJson(
+async function warnIfPerAgentAuthMissing(
   targetHome: string,
-  companyId: string,
   agentId: string,
-  env: NodeJS.ProcessEnv,
   onLog: AdapterExecutionContext["onLog"],
 ): Promise<void> {
   const authTarget = path.join(targetHome, "auth.json");
   const existing = await fs.lstat(authTarget).catch(() => null);
-  // Only seed when auth.json is truly absent (not a broken symlink).
   if (existing) return;
-
-  // D-1767 (S4) cutover safety: auto-seeding copies an EXISTING (possibly live)
-  // shared auth.json into this agent's fresh home. That is only safe for the
-  // pre-S4 agent(s) that already legitimately own the shared ChatGPT session
-  // (e.g. Lidi on /paperclip/.codex). Auto-seeding a *new* agent from the live
-  // shared token would copy another agent's OAuth session and re-introduce the
-  // exact refresh-token burn S4 exists to prevent. So seeding is gated to an
-  // explicit allowlist (PAPERCLIP_CODEX_SEED_SHARED_AGENT_IDS, comma-separated
-  // agent ids — set it to the pre-S4 live agent(s) at the S4 deploy); every
-  // other agent must provide its own auth.json (own device-auth or
-  // OPENAI_API_KEY) before first wake, or codex fails loudly rather than
-  // silently burning another agent's token.
-  const seedAllowlist = (env.PAPERCLIP_CODEX_SEED_SHARED_AGENT_IDS ?? "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-  if (!seedAllowlist.includes(agentId)) {
-    await onLog(
-      "stdout",
-      `[paperclip] D-1767: agent ${agentId} not in PAPERCLIP_CODEX_SEED_SHARED_AGENT_IDS — skipping shared-auth seed (agent must own its auth.json).\n`,
-    );
-    return;
-  }
-
-  const candidates: string[] = [
-    // 1. Legacy company-level managed home (old shared path -- where Lidi's auth.json lives).
-    path.join(resolveLegacyCompanyCodexHomeDir(env, companyId), "auth.json"),
-    // 2. Process-level shared home (~/.codex or $CODEX_HOME).
-    path.join(resolveSharedCodexHomeDir(env), "auth.json"),
-  ];
-
-  for (const src of candidates) {
-    // Follow symlinks to check the real file exists.
-    const srcStat = await fs.stat(src).catch(() => null);
-    if (!srcStat) continue;
-    try {
-      await ensureParentDir(authTarget);
-      await fs.copyFile(src, authTarget);
-      // Ensure 0o600 regardless of source permissions.
-      await fs.chmod(authTarget, 0o600);
-      await onLog(
-        "stdout",
-        `[paperclip] D-1767: seeded per-agent auth.json from "${src}" (first-run cutover).\n`,
-      );
-      return;
-    } catch {
-      // Non-fatal -- fall through to next candidate.
-    }
-  }
-  // No source found; Codex will handle missing auth on its own.
+  await onLog(
+    "stderr",
+    `[paperclip] AUTH MISSING for agent ${agentId}: no auth.json in managed Codex home "${targetHome}". ` +
+      `This agent has not been provisioned — every run will fail with "401 Missing bearer" (this is a MISSING ` +
+      `credential, not an expired one). Fix: CODEX_HOME="${targetHome}" codex login --device-auth (its OWN ` +
+      `login — never copy another agent's auth.json), or set adapter_config.env.OPENAI_API_KEY. ` +
+      `See platforms/paperclip/docs/codex-credential-lifecycle.md.\n`,
+  );
 }
 
 /**
@@ -229,14 +169,13 @@ export async function prepareManagedCodexHome(
   if (seedFromShared) {
     if (!apiKey) {
       if (companyId && options.agentId) {
-        // D-1767 (S4) per-agent path: copy (never symlink) auth.json, seeding
-        // from the legacy company home on first run for cutover safety — gated
-        // to the PAPERCLIP_CODEX_SEED_SHARED_AGENT_IDS allowlist inside.
-        await seedPerAgentAuthJson(targetHome, companyId, options.agentId, env, onLog);
+        // D-1861 (S-1): per-agent isolated home. No auth seeding — the agent
+        // owns its own auth.json. (S-2) warn loudly if it has not been provisioned.
+        await warnIfPerAgentAuthMissing(targetHome, options.agentId, onLog);
       } else {
-        // Pre-S4 legacy path: symlink auth.json to the shared home (companyId
-        // present but no agentId).  Keeps old behaviour for any caller that has
-        // not yet been updated.
+        // Legacy no-agentId path (old callers / test fixtures only): symlink
+        // auth.json to the shared home. Real agents always pass agentId and
+        // take the isolated path above.
         for (const name of COPIED_PER_AGENT_FILES) {
           const source = path.join(sourceHome, name);
           if (!(await pathExists(source))) continue;
@@ -245,6 +184,7 @@ export async function prepareManagedCodexHome(
       }
     }
 
+    // Copy non-secret shared config (config.toml etc.) — never auth.json.
     for (const name of COPIED_SHARED_FILES) {
       const source = path.join(sourceHome, name);
       if (!(await pathExists(source))) continue;
@@ -253,7 +193,7 @@ export async function prepareManagedCodexHome(
 
     await onLog(
       "stdout",
-      `[paperclip] Using ${isWorktreeMode(env) ? "worktree-isolated" : "Paperclip-managed"} Codex home "${targetHome}" (seeded from "${sourceHome}").\n`,
+      `[paperclip] Using ${isWorktreeMode(env) ? "worktree-isolated" : "Paperclip-managed"} Codex home "${targetHome}".\n`,
     );
   }
 

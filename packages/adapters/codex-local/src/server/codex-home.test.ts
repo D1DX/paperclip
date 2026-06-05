@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   prepareManagedCodexHome,
   resolveManagedCodexHomeDir,
-  resolveLegacyCompanyCodexHomeDir,
+  resolveSharedCodexHomeDir,
 } from "./codex-home.js";
 
 // ---------------------------------------------------------------------------
@@ -88,119 +88,117 @@ describe("D-1767 S4 — manual CODEX_HOME override wins", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Task 3: first-run seed from legacy company home
+// D-1861 (S-1/S-2): no auth seeding — own auth.json only + loud missing-auth
 // ---------------------------------------------------------------------------
 
-describe("D-1767 S4 — first-run seed from legacy company home", () => {
+describe("D-1861 S-1/S-2 — uniform provisioning, no seed, loud missing-auth", () => {
   let tmpDir: string;
 
   beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-home-seed-test-"));
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-home-d1861-test-"));
   });
 
   afterEach(async () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("seeds auth.json from legacy company home into a fresh per-agent home", async () => {
+  it("S-1: never copies another home's auth.json into a fresh per-agent home", async () => {
     const env = makeTmpEnv(tmpDir);
-    const companyId = "company-seed-test";
-    const agentId = "agent-seed-test";
-    // D-1767 (S4): seeding is gated to the allowlist — list this agent.
-    env.PAPERCLIP_CODEX_SEED_SHARED_AGENT_IDS = agentId;
-
-    // Write auth.json into the legacy company home (the pre-S4 shared path).
-    const legacyHome = resolveLegacyCompanyCodexHomeDir(env, companyId);
-    await fs.mkdir(legacyHome, { recursive: true });
+    // Point the shared home at a dir holding a live token (e.g. Lidi's).
+    const sharedHome = path.join(tmpDir, "shared-codex");
+    env.CODEX_HOME = sharedHome;
+    await fs.mkdir(sharedHome, { recursive: true });
     await fs.writeFile(
-      path.join(legacyHome, "auth.json"),
-      JSON.stringify({ refresh_token: "legacy-token" }),
-      { mode: 0o600 },
-    );
-
-    const logs: string[] = [];
-    const targetHome = await prepareManagedCodexHome(env, captureLog(logs), companyId, {
-      agentId,
-    });
-
-    // The returned home must be the per-agent path.
-    expect(targetHome).toContain(agentId);
-
-    // auth.json must have been copied into the per-agent home.
-    const authContent = await fs.readFile(path.join(targetHome, "auth.json"), "utf8");
-    expect(JSON.parse(authContent)).toEqual({ refresh_token: "legacy-token" });
-
-    // The legacy home's auth.json must still exist (copy-from, never move-from).
-    const legacyAuthExists = await fs
-      .access(path.join(legacyHome, "auth.json"))
-      .then(() => true)
-      .catch(() => false);
-    expect(legacyAuthExists).toBe(true);
-
-    // A cutover log line must have been emitted.
-    expect(logs.some((l) => l.includes("D-1767") && l.includes("seeded"))).toBe(true);
-  });
-
-  it("does NOT overwrite an existing auth.json in the per-agent home on second run", async () => {
-    const env = makeTmpEnv(tmpDir);
-    const companyId = "company-idempotent";
-    const agentId = "agent-idempotent";
-    // D-1767 (S4): seeding is gated to the allowlist — list this agent.
-    env.PAPERCLIP_CODEX_SEED_SHARED_AGENT_IDS = agentId;
-
-    // Legacy home with one token.
-    const legacyHome = resolveLegacyCompanyCodexHomeDir(env, companyId);
-    await fs.mkdir(legacyHome, { recursive: true });
-    await fs.writeFile(
-      path.join(legacyHome, "auth.json"),
-      JSON.stringify({ refresh_token: "legacy-token" }),
-      { mode: 0o600 },
-    );
-
-    // First run: seeds.
-    const targetHome = await prepareManagedCodexHome(env, noopLog, companyId, { agentId });
-
-    // Simulate agent rotating its own token between runs.
-    await fs.writeFile(
-      path.join(targetHome, "auth.json"),
-      JSON.stringify({ refresh_token: "agent-own-token" }),
-      { mode: 0o600 },
-    );
-
-    // Second run: must NOT overwrite.
-    await prepareManagedCodexHome(env, noopLog, companyId, { agentId });
-
-    const authContent = await fs.readFile(path.join(targetHome, "auth.json"), "utf8");
-    expect(JSON.parse(authContent)).toEqual({ refresh_token: "agent-own-token" });
-  });
-
-  it("does NOT seed from the shared home when the agent is not allowlisted (cutover footgun guard)", async () => {
-    const env = makeTmpEnv(tmpDir);
-    const companyId = "company-not-allowed";
-    const agentId = "agent-not-allowed";
-    // Intentionally NOT in PAPERCLIP_CODEX_SEED_SHARED_AGENT_IDS.
-    env.PAPERCLIP_CODEX_SEED_SHARED_AGENT_IDS = "some-other-agent";
-
-    // A live token sits in the legacy company home (e.g. Lidi's shared token).
-    const legacyHome = resolveLegacyCompanyCodexHomeDir(env, companyId);
-    await fs.mkdir(legacyHome, { recursive: true });
-    await fs.writeFile(
-      path.join(legacyHome, "auth.json"),
+      path.join(sharedHome, "auth.json"),
       JSON.stringify({ refresh_token: "another-agents-live-token" }),
       { mode: 0o600 },
     );
 
-    const targetHome = await prepareManagedCodexHome(env, noopLog, companyId, { agentId });
+    const targetHome = await prepareManagedCodexHome(env, noopLog, "company-x", {
+      agentId: "agent-fresh",
+    });
 
-    // The new agent's home must NOT have copied the other agent's live token.
+    // The fresh agent's home must NOT have copied the shared token.
     const seeded = await fs
       .access(path.join(targetHome, "auth.json"))
       .then(() => true)
       .catch(() => false);
     expect(seeded).toBe(false);
 
-    // The legacy token is untouched.
-    const legacyAuth = await fs.readFile(path.join(legacyHome, "auth.json"), "utf8");
-    expect(JSON.parse(legacyAuth)).toEqual({ refresh_token: "another-agents-live-token" });
+    // The shared token is untouched.
+    const sharedAuth = await fs.readFile(path.join(sharedHome, "auth.json"), "utf8");
+    expect(JSON.parse(sharedAuth)).toEqual({ refresh_token: "another-agents-live-token" });
+  });
+
+  it("S-2: emits a loud AUTH MISSING diagnostic when the per-agent home has no auth.json", async () => {
+    const env = makeTmpEnv(tmpDir);
+    env.CODEX_HOME = path.join(tmpDir, "shared-codex"); // distinct from the managed home
+    const agentId = "agent-unprovisioned";
+    const logs: string[] = [];
+
+    const targetHome = await prepareManagedCodexHome(env, captureLog(logs), "company-x", {
+      agentId,
+    });
+
+    expect(targetHome).toContain(agentId);
+    expect(
+      logs.some((l) => l.includes("AUTH MISSING") && l.includes(agentId)),
+    ).toBe(true);
+  });
+
+  it("S-2: does NOT warn when the per-agent home already has its own auth.json", async () => {
+    const env = makeTmpEnv(tmpDir);
+    env.CODEX_HOME = path.join(tmpDir, "shared-codex");
+    const companyId = "company-x";
+    const agentId = "agent-provisioned";
+
+    // Pre-provision the agent's OWN auth.json in its managed home.
+    const managedHome = resolveManagedCodexHomeDir(env, companyId, agentId);
+    await fs.mkdir(managedHome, { recursive: true });
+    await fs.writeFile(
+      path.join(managedHome, "auth.json"),
+      JSON.stringify({ refresh_token: "agent-own-token" }),
+      { mode: 0o600 },
+    );
+
+    const logs: string[] = [];
+    await prepareManagedCodexHome(env, captureLog(logs), companyId, { agentId });
+
+    // No AUTH MISSING warning, and the agent's own token is untouched.
+    expect(logs.some((l) => l.includes("AUTH MISSING"))).toBe(false);
+    const authContent = await fs.readFile(path.join(managedHome, "auth.json"), "utf8");
+    expect(JSON.parse(authContent)).toEqual({ refresh_token: "agent-own-token" });
+  });
+
+  it("retired: PAPERCLIP_CODEX_SEED_SHARED_AGENT_IDS no longer seeds (allowlist is dead)", async () => {
+    const env = makeTmpEnv(tmpDir);
+    const sharedHome = path.join(tmpDir, "shared-codex");
+    env.CODEX_HOME = sharedHome;
+    const agentId = "agent-allowlisted";
+    // Even if the (now-removed) allowlist names this agent, no seed occurs.
+    env.PAPERCLIP_CODEX_SEED_SHARED_AGENT_IDS = agentId;
+    await fs.mkdir(sharedHome, { recursive: true });
+    await fs.writeFile(
+      path.join(sharedHome, "auth.json"),
+      JSON.stringify({ refresh_token: "shared-token" }),
+      { mode: 0o600 },
+    );
+
+    const targetHome = await prepareManagedCodexHome(env, noopLog, "company-x", { agentId });
+
+    const seeded = await fs
+      .access(path.join(targetHome, "auth.json"))
+      .then(() => true)
+      .catch(() => false);
+    expect(seeded).toBe(false);
+  });
+});
+
+// Reference resolveSharedCodexHomeDir so the import is used even if the suite
+// above is trimmed; documents that the shared home is read-only (seed source
+// retired — D-1861 S-1).
+describe("D-1861 — shared home is never a write target", () => {
+  it("resolveSharedCodexHomeDir honours CODEX_HOME", () => {
+    expect(resolveSharedCodexHomeDir({ CODEX_HOME: "/x/y" })).toBe(path.resolve("/x/y"));
   });
 });
