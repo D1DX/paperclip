@@ -57,6 +57,13 @@ import {
 import { isAutomaticRecoverySuppressedByPauseHold } from "./pause-hold-guard.js";
 
 const EXECUTION_PATH_HEARTBEAT_RUN_STATUSES = ["queued", "running", "scheduled_retry"] as const;
+// D-1890: a `deferred_issue_execution` wake older than this is treated as orphaned
+// for the stranded-recovery strand check — it no longer counts as a live execution
+// path, so a worker stranded behind a never-promoted deferral is re-dispatched
+// instead of being permanently masked. A genuine deferral is promoted in seconds
+// (heartbeat cancelQueuedRunForStaleIssue / releaseIssueExecutionAndPromote), well
+// under this floor; only an orphan survives it.
+const STRANDED_DEFERRED_WAKE_MAX_AGE_MS = 2 * 60 * 1000;
 const UNSUCCESSFUL_HEARTBEAT_RUN_TERMINAL_STATUSES = ["failed", "cancelled", "timed_out"] as const;
 export const ACTIVE_RUN_OUTPUT_SUSPICION_THRESHOLD_MS = 60 * 60 * 1000;
 export const ACTIVE_RUN_OUTPUT_CRITICAL_THRESHOLD_MS = 4 * 60 * 60 * 1000;
@@ -393,7 +400,18 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
       .then((rows) => rows[0] ?? null);
   }
 
-  async function hasActiveExecutionPath(companyId: string, issueId: string) {
+  async function hasActiveExecutionPath(
+    companyId: string,
+    issueId: string,
+    deferredWakeMaxAgeMs?: number,
+  ) {
+    // When a max-age is supplied, a deferred wake only counts as a live path while
+    // it is fresh; an older one is presumed orphaned (the run it was parked behind
+    // is gone) and must not mask stranded-recovery (D-1890).
+    const deferredWakeFreshnessFloor =
+      typeof deferredWakeMaxAgeMs === "number"
+        ? new Date(Date.now() - deferredWakeMaxAgeMs)
+        : null;
     const [run, deferredWake] = await Promise.all([
       db
         .select({ id: heartbeatRuns.id })
@@ -415,6 +433,9 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
             eq(agentWakeupRequests.companyId, companyId),
             eq(agentWakeupRequests.status, "deferred_issue_execution"),
             sql`${agentWakeupRequests.payload} ->> 'issueId' = ${issueId}`,
+            ...(deferredWakeFreshnessFloor
+              ? [gt(agentWakeupRequests.requestedAt, deferredWakeFreshnessFloor)]
+              : []),
           ),
         )
         .limit(1)
@@ -422,6 +443,43 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
     ]);
 
     return Boolean(run || deferredWake);
+  }
+
+  // D-1890: mark any orphaned (stale) `deferred_issue_execution` wake for an issue as
+  // failed before the stranded-recovery re-dispatch fires, so the orphan cannot be
+  // spuriously promoted into a duplicate run when a later run releases the issue lock.
+  // Only called once hasActiveExecutionPath (age-gated) has already confirmed no fresh
+  // path exists, so this never fails a deferral that is about to be legitimately promoted.
+  async function supersedeStaleOrphanedDeferredWakes(
+    companyId: string,
+    issueId: string,
+    maxAgeMs: number,
+  ): Promise<number> {
+    const floor = new Date(Date.now() - maxAgeMs);
+    const superseded = await db
+      .update(agentWakeupRequests)
+      .set({
+        status: "failed",
+        finishedAt: new Date(),
+        error: "Superseded by stranded recovery: orphaned deferred wake (no live run to promote it)",
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(agentWakeupRequests.companyId, companyId),
+          eq(agentWakeupRequests.status, "deferred_issue_execution"),
+          sql`${agentWakeupRequests.payload} ->> 'issueId' = ${issueId}`,
+          sql`${agentWakeupRequests.requestedAt} <= ${floor}`,
+        ),
+      )
+      .returning({ id: agentWakeupRequests.id });
+    if (superseded.length > 0) {
+      logger.warn(
+        { companyId, issueId, count: superseded.length },
+        "stranded-recovery: superseded orphaned deferred wake(s)",
+      );
+    }
+    return superseded.length;
   }
 
   async function hasQueuedIssueWake(companyId: string, issueId: string) {
@@ -1770,10 +1828,25 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
         continue;
       }
 
-      if (await hasActiveExecutionPath(issue.companyId, issue.id)) {
+      if (
+        await hasActiveExecutionPath(
+          issue.companyId,
+          issue.id,
+          STRANDED_DEFERRED_WAKE_MAX_AGE_MS,
+        )
+      ) {
         result.skipped += 1;
         continue;
       }
+
+      // No fresh execution path. Fail any stale orphaned deferred wake so the
+      // re-dispatch below is the single live path and the orphan cannot later be
+      // spuriously promoted into a duplicate run (D-1890).
+      await supersedeStaleOrphanedDeferredWakes(
+        issue.companyId,
+        issue.id,
+        STRANDED_DEFERRED_WAKE_MAX_AGE_MS,
+      );
 
       if (await isAutomaticRecoverySuppressedByPauseHold(db, issue.companyId, issue.id, treeControlSvc)) {
         result.skipped += 1;

@@ -6174,6 +6174,28 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       payload: staleness.details,
     });
 
+    // The staleness reason promises "the new owner will be woken instead", but
+    // clearing the execution lock above does not by itself dispatch that owner.
+    // When the assignee/participant changed (e.g. an approver reject bounced the
+    // issue back to the worker, or a manual nudge raced the server), a wake for the
+    // new owner may be parked as a `deferred_issue_execution` request behind this
+    // very run. Promote it now so the worker/participant is actually re-dispatched
+    // instead of being stranded (D-1890). Best-effort: a promotion failure must not
+    // mask the cancellation itself.
+    if (
+      staleness.errorCode === "issue_assignee_changed" ||
+      staleness.errorCode === "issue_review_participant_changed"
+    ) {
+      try {
+        await releaseIssueExecutionAndPromote(cancelled);
+      } catch (err) {
+        logger.error(
+          { err, runId: cancelled.id, issueId, errorCode: staleness.errorCode },
+          "cancelQueuedRunForStaleIssue: failed to promote deferred wake for new owner",
+        );
+      }
+    }
+
     return cancelled;
   }
 

@@ -2285,54 +2285,74 @@ export function routineService(
       for (const row of due) {
         if (!row.trigger.nextRunAt || !row.trigger.cronExpression || !row.trigger.timezone) continue;
 
-        let runCount = 1;
-        let claimedNextRunAt = nextCronTickInTimeZone(row.trigger.cronExpression, row.trigger.timezone, now);
+        // D-1890: isolate each trigger's processing. Previously an exception in any
+        // one due trigger (e.g. nextCronTickInTimeZone throwing on a bad cron/tz, or
+        // a dispatch failure) rejected the whole sweep, freezing EVERY other due
+        // trigger that tick — and re-throwing every tick, so the freeze was
+        // permanent. Per-row try/catch lets one bad trigger be logged and skipped
+        // while the rest of the sweep proceeds.
+        try {
+          let runCount = 1;
+          let claimedNextRunAt = nextCronTickInTimeZone(row.trigger.cronExpression, row.trigger.timezone, now);
 
-        if (row.routine.catchUpPolicy === "enqueue_missed_with_cap") {
-          let cursor: Date | null = row.trigger.nextRunAt;
-          runCount = 0;
-          while (cursor && cursor <= now && runCount < MAX_CATCH_UP_RUNS) {
-            runCount += 1;
-            claimedNextRunAt = nextCronTickInTimeZone(row.trigger.cronExpression, row.trigger.timezone, cursor);
-            cursor = claimedNextRunAt;
+          if (row.routine.catchUpPolicy === "enqueue_missed_with_cap") {
+            let cursor: Date | null = row.trigger.nextRunAt;
+            runCount = 0;
+            while (cursor && cursor <= now && runCount < MAX_CATCH_UP_RUNS) {
+              runCount += 1;
+              claimedNextRunAt = nextCronTickInTimeZone(row.trigger.cronExpression, row.trigger.timezone, cursor);
+              cursor = claimedNextRunAt;
+            }
           }
-        }
 
-        // D-1767: a null claim freezes the trigger (next_run_at = NULL can never
-        // re-match the due-query). It's written when nextCronTickInTimeZone finds
-        // no future tick. Log it so the silent-freeze class is visible; the
-        // reconcileScheduleTriggerNextRun pass will attempt a re-seed next cycle.
-        if (!claimedNextRunAt) {
-          logger.warn(
-            { routineId: row.routine.id, triggerId: row.trigger.id },
-            "D-1767: scheduler tick computed no future cron tick — next_run_at will be NULL (frozen until reconcile)",
+          // D-1767: a null claim freezes the trigger (next_run_at = NULL can never
+          // re-match the due-query). It's written when nextCronTickInTimeZone finds
+          // no future tick. Log it so the silent-freeze class is visible; the
+          // reconcileScheduleTriggerNextRun pass will attempt a re-seed next cycle.
+          if (!claimedNextRunAt) {
+            logger.warn(
+              { routineId: row.routine.id, triggerId: row.trigger.id },
+              "D-1767: scheduler tick computed no future cron tick — next_run_at will be NULL (frozen until reconcile)",
+            );
+          }
+
+          const claimed = await db
+            .update(routineTriggers)
+            .set({
+              nextRunAt: claimedNextRunAt,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(routineTriggers.id, row.trigger.id),
+                eq(routineTriggers.enabled, true),
+                eq(routineTriggers.nextRunAt, row.trigger.nextRunAt),
+              ),
+            )
+            .returning({ id: routineTriggers.id })
+            .then((rows) => rows[0] ?? null);
+          if (!claimed) continue;
+
+          for (let i = 0; i < runCount; i += 1) {
+            await dispatchRoutineRun({
+              routine: row.routine,
+              trigger: row.trigger,
+              source: "schedule",
+            });
+            triggered += 1;
+          }
+        } catch (err) {
+          logger.error(
+            {
+              err,
+              routineId: row.routine.id,
+              triggerId: row.trigger.id,
+              cronExpression: row.trigger.cronExpression,
+              timezone: row.trigger.timezone,
+            },
+            "D-1890: scheduled-trigger tick failed for one trigger — skipping it so the sweep continues",
           );
-        }
-
-        const claimed = await db
-          .update(routineTriggers)
-          .set({
-            nextRunAt: claimedNextRunAt,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(routineTriggers.id, row.trigger.id),
-              eq(routineTriggers.enabled, true),
-              eq(routineTriggers.nextRunAt, row.trigger.nextRunAt),
-            ),
-          )
-          .returning({ id: routineTriggers.id })
-          .then((rows) => rows[0] ?? null);
-        if (!claimed) continue;
-
-        for (let i = 0; i < runCount; i += 1) {
-          await dispatchRoutineRun({
-            routine: row.routine,
-            trigger: row.trigger,
-            source: "schedule",
-          });
-          triggered += 1;
+          continue;
         }
       }
 
