@@ -1119,6 +1119,37 @@ export function resolveModelProfileApplication(input: {
     };
   }
 
+  // D-1984: clamp a stale provider-namespaced cheap-model override on codex_local.
+  // A codex_local agent authenticated against a ChatGPT account can only run
+  // OpenAI/ChatGPT models (gpt-*). A leftover OpenRouter-style slug in the
+  // agent's cheap profile (e.g. "qwen/qwen3-235b-a22b-2507", carried over from a
+  // pre-codex claude_local-via-OpenRouter era) is rejected by the Codex CLI with
+  // 400 invalid_request_error ("not supported when using Codex with a ChatGPT
+  // account") -> adapter_failed -> the agent goes status=error. The D-1839 guard
+  // above only clamps an adapter-default cheap lane on a recovery wake; an
+  // EXPLICIT agent_runtime (or issue) override with a provider-namespaced model
+  // slips through (configured === true). A model id containing "/" is never a
+  // valid ChatGPT-account model, so skip the profile and let the run inherit the
+  // agent's configured model instead of force-failing. A bare non-OpenAI name
+  // (no "/") is not caught here — the observed and recurrence-prone class is
+  // always the namespaced OpenRouter slug.
+  const effectiveCheapModel =
+    runtimeProfile.adapterConfig.model ?? parseObject(adapterProfile.adapterConfig).model;
+  if (
+    input.adapterType === "codex_local" &&
+    typeof effectiveCheapModel === "string" &&
+    effectiveCheapModel.includes("/")
+  ) {
+    return {
+      requested,
+      requestedBy,
+      applied: null,
+      configSource: null,
+      fallbackReason: "codex_local_incompatible_cheap_model",
+      adapterConfig: null,
+    };
+  }
+
   return {
     requested,
     requestedBy,

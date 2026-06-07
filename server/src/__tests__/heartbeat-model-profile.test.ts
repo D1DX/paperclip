@@ -211,3 +211,109 @@ describe("D-1839 recovery cheap-profile model inheritance (codex_local)", () => 
     expect(modelProfile.adapterConfig).toMatchObject({ model: "adapter-cheap" });
   });
 });
+
+describe("D-1984 codex_local provider-namespaced cheap-model clamp", () => {
+  const codexCheapProfile: AdapterModelProfileDefinition = {
+    key: "cheap",
+    label: "Cheap",
+    adapterConfig: { model: "gpt-5.3-codex-spark", modelReasoningEffort: "low" },
+    source: "adapter_default",
+  };
+
+  it("clamps a stale provider-namespaced agent_runtime cheap override on codex_local (the qwen case)", () => {
+    const modelProfile = resolveModelProfileApplication({
+      adapterModelProfiles: [codexCheapProfile],
+      agentRuntimeConfig: {
+        modelProfiles: { cheap: { adapterConfig: { model: "qwen/qwen3-235b-a22b-2507" } } },
+      },
+      issueModelProfile: null,
+      contextSnapshot: { modelProfile: "cheap" },
+      adapterType: "codex_local",
+    });
+
+    expect(modelProfile).toMatchObject({
+      requested: "cheap",
+      requestedBy: "wake_context",
+      applied: null,
+      configSource: null,
+      fallbackReason: "codex_local_incompatible_cheap_model",
+      adapterConfig: null,
+    });
+
+    // The merge must leave the agent's own (codex-valid) model untouched.
+    const merged = mergeModelProfileAdapterConfig({
+      baseConfig: { model: "gpt-5.5" },
+      modelProfile,
+      issueAdapterConfig: null,
+    });
+    expect(merged).toEqual({ model: "gpt-5.5" });
+  });
+
+  it("clamps a provider-namespaced issue_override cheap model on codex_local too", () => {
+    const modelProfile = resolveModelProfileApplication({
+      adapterModelProfiles: [
+        {
+          key: "cheap",
+          label: "Cheap",
+          adapterConfig: { model: "anthropic/claude-3-5-haiku", modelReasoningEffort: "low" },
+          source: "adapter_default",
+        },
+      ],
+      agentRuntimeConfig: {},
+      issueModelProfile: "cheap",
+      contextSnapshot: {},
+      adapterType: "codex_local",
+    });
+
+    expect(modelProfile).toMatchObject({
+      applied: null,
+      fallbackReason: "codex_local_incompatible_cheap_model",
+      adapterConfig: null,
+    });
+  });
+
+  it("still applies a valid gpt-* agent_runtime cheap override on codex_local (no false clamp)", () => {
+    const modelProfile = resolveModelProfileApplication({
+      adapterModelProfiles: [codexCheapProfile],
+      agentRuntimeConfig: { modelProfiles: { cheap: { adapterConfig: { model: "gpt-5.4-mini" } } } },
+      issueModelProfile: null,
+      contextSnapshot: { modelProfile: "cheap" },
+      adapterType: "codex_local",
+    });
+
+    expect(modelProfile).toMatchObject({
+      requested: "cheap",
+      applied: "cheap",
+      configSource: "agent_runtime",
+      fallbackReason: null,
+    });
+    expect(modelProfile.adapterConfig).toMatchObject({ model: "gpt-5.4-mini" });
+  });
+
+  it("does not clamp a provider-namespaced cheap model on a non-codex_local adapter (OpenRouter is valid there)", () => {
+    const modelProfile = resolveModelProfileApplication({
+      adapterModelProfiles: [
+        {
+          key: "cheap",
+          label: "Cheap",
+          adapterConfig: { model: "adapter-cheap", modelReasoningEffort: "low" },
+          source: "adapter_default",
+        },
+      ],
+      agentRuntimeConfig: {
+        modelProfiles: { cheap: { adapterConfig: { model: "qwen/qwen3-235b-a22b-2507" } } },
+      },
+      issueModelProfile: null,
+      contextSnapshot: { modelProfile: "cheap" },
+      adapterType: "claude_local",
+    });
+
+    expect(modelProfile).toMatchObject({
+      requested: "cheap",
+      applied: "cheap",
+      configSource: "agent_runtime",
+      fallbackReason: null,
+    });
+    expect(modelProfile.adapterConfig).toMatchObject({ model: "qwen/qwen3-235b-a22b-2507" });
+  });
+});
