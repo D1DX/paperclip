@@ -120,9 +120,9 @@ interface IssueExecutionDecision {
    - Sets status to `in_progress`
    - Reassigns to the original executor (stored in `returnAssignee`)
    - Sets `executionState.status` to `changes_requested`
-3. **Executor makes changes** and transitions to `done` again.
-4. Runtime routes back to the **same review stage** (not the beginning), with the same reviewer.
-5. This loop continues until the reviewer approves.
+3. **Executor makes changes** and transitions to `in_review` (resubmit).
+4. Runtime resets the gate to the **first stage**: a change request clears `completedStageIds` (the resubmitted artifact is new, so any earlier stage that already passed must re-review it). The resubmit then flows stage 0 → … → the rejecting stage fresh. For a single-stage gate this re-enters the one stage; for a multi-stage gate (e.g. `[review → approval]`) it re-runs every stage from the start.
+5. This loop continues until every stage approves the latest artifact.
 
 ### Policy Variants
 
