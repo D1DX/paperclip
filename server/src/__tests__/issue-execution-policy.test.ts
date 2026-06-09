@@ -1447,3 +1447,89 @@ describe("issue execution policy transitions", () => {
     });
   });
 });
+
+describe("multi-stage reject resets the gate to stage 0 (D-2035)", () => {
+  it("a stage-1 reject + worker resubmit re-enters at stage 0, not the rejecting stage", () => {
+    const policy = twoStagePolicy();
+    const reviewStageId = policy.stages[0].id; // qa review (stage 0)
+    const approvalStageId = policy.stages[1].id; // cto approval (stage 1)
+
+    // Stage 0 (qa review) approves → advances to stage 1, completedStageIds=[stage0].
+    const afterReview = applyIssueExecutionPolicyTransition({
+      issue: {
+        status: "in_review",
+        assigneeAgentId: qaAgentId,
+        assigneeUserId: null,
+        executionPolicy: policy,
+        executionState: {
+          status: "pending",
+          currentStageId: reviewStageId,
+          currentStageIndex: 0,
+          currentStageType: "review",
+          currentParticipant: { type: "agent", agentId: qaAgentId },
+          returnAssignee: { type: "agent", agentId: coderAgentId },
+          completedStageIds: [],
+          lastDecisionId: null,
+          lastDecisionOutcome: null,
+        },
+      },
+      policy,
+      requestedStatus: "done",
+      requestedAssigneePatch: {},
+      actor: { agentId: qaAgentId },
+      commentBody: "lgtm",
+    });
+    expect(afterReview.patch.executionState).toMatchObject({
+      status: "pending",
+      currentStageId: approvalStageId,
+      completedStageIds: [reviewStageId],
+    });
+    expect(afterReview.patch.assigneeUserId).toBe(ctoUserId);
+
+    // Stage 1 (cto approval) rejects → changes_requested; the fix clears completedStageIds.
+    const afterReject = applyIssueExecutionPolicyTransition({
+      issue: {
+        status: "in_review",
+        assigneeAgentId: null,
+        assigneeUserId: ctoUserId,
+        executionPolicy: policy,
+        executionState: afterReview.patch.executionState as IssueExecutionState,
+      },
+      policy,
+      requestedStatus: "in_progress",
+      requestedAssigneePatch: {},
+      actor: { userId: ctoUserId },
+      commentBody: "needs changes",
+    });
+    expect(afterReject.patch.status).toBe("in_progress");
+    expect(afterReject.patch.assigneeAgentId).toBe(coderAgentId);
+    expect(afterReject.patch.executionState).toMatchObject({
+      status: "changes_requested",
+      completedStageIds: [],
+    });
+
+    // Worker resubmits → must re-enter at stage 0 (qa review), NOT stage 1 (cto approval).
+    const afterResubmit = applyIssueExecutionPolicyTransition({
+      issue: {
+        status: "in_progress",
+        assigneeAgentId: coderAgentId,
+        assigneeUserId: null,
+        executionPolicy: policy,
+        executionState: afterReject.patch.executionState as IssueExecutionState,
+      },
+      policy,
+      requestedStatus: "in_review",
+      requestedAssigneePatch: {},
+      actor: { agentId: coderAgentId },
+    });
+    expect(afterResubmit.patch.status).toBe("in_review");
+    expect(afterResubmit.patch.assigneeAgentId).toBe(qaAgentId);
+    expect(afterResubmit.patch.assigneeUserId).toBeNull();
+    expect(afterResubmit.patch.executionState).toMatchObject({
+      status: "pending",
+      currentStageId: reviewStageId,
+      currentStageIndex: 0,
+      completedStageIds: [],
+    });
+  });
+});

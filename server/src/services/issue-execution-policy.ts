@@ -548,12 +548,20 @@ function buildPendingState(input: {
 }
 
 function buildChangesRequestedState(previous: IssueExecutionState, currentStage: IssueExecutionStage): IssueExecutionState {
+  // A reject (changes requested) invalidates every prior stage approval: the
+  // resubmitted artifact is new, so any earlier stage that already passed must
+  // re-review it. Clear completedStageIds + reset the stage pointer to the start
+  // so the worker's resubmit re-enters the gate at stage 0, not at the rejecting
+  // stage. Without this, nextPendingStage() (and the resubmit path below) skips
+  // the earlier already-"completed" stages → reviewer-skip loop (D-2035).
   return {
     ...previous,
     status: CHANGES_REQUESTED_STATUS,
     currentStageId: currentStage.id,
+    currentStageIndex: null,
     currentStageType: currentStage.type,
     reviewRequest: null,
+    completedStageIds: [],
     lastDecisionOutcome: "changes_requested",
   };
 }
@@ -805,10 +813,13 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
     return { patch };
   }
 
-  let pendingStage =
-    existingState?.status === CHANGES_REQUESTED_STATUS && currentStage
-      ? currentStage
-      : nextPendingStage(input.policy, existingState);
+  // On a resubmit after changes_requested, re-enter the gate at the first
+  // pending stage rather than the stage that rejected. buildChangesRequestedState
+  // clears completedStageIds, so nextPendingStage() now resolves to stage 0 and
+  // the resubmit flows stage-0 → … → stage-N fresh (D-2035). Previously this
+  // forced pendingStage=currentStage (the rejecting stage), skipping earlier
+  // stages and looping on multi-stage gates.
+  let pendingStage = nextPendingStage(input.policy, existingState);
   if (!pendingStage) return { patch };
 
   const returnAssignee = existingState?.returnAssignee ?? currentAssignee;
