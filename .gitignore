@@ -56,3 +56,9 @@ tests/release-smoke/test-results/
 tests/release-smoke/playwright-report/
 .superset/
 .claude/worktrees/
+credentials.json
+*.har
+*.pem
+*.key
+GEMINI.md
+.gemini/settings.json
